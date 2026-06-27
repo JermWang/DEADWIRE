@@ -2,8 +2,18 @@
 // Keep every builder terse and consistent. PS1/PS2 facet look uses flatShading.
 import * as THREE from 'three';
 
+const _geoCache = new Map();
+
+function cachedGeometry(key, create) {
+  if (_geoCache.has(key)) return _geoCache.get(key);
+  const geometry = create();
+  geometry.userData.deadwireShared = true;
+  _geoCache.set(key, geometry);
+  return geometry;
+}
+
 export function box(w, h, d, mat, x = 0, y = 0, z = 0) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  const m = new THREE.Mesh(cachedGeometry(`box|${w}|${h}|${d}`, () => new THREE.BoxGeometry(w, h, d)), mat);
   m.position.set(x, y, z);
   m.castShadow = true;
   m.receiveShadow = true;
@@ -11,7 +21,7 @@ export function box(w, h, d, mat, x = 0, y = 0, z = 0) {
 }
 
 export function cyl(rTop, rBot, h, seg, mat, x = 0, y = 0, z = 0) {
-  const m = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, h, seg), mat);
+  const m = new THREE.Mesh(cachedGeometry(`cyl|${rTop}|${rBot}|${h}|${seg}`, () => new THREE.CylinderGeometry(rTop, rBot, h, seg)), mat);
   m.position.set(x, y, z);
   m.castShadow = true;
   m.receiveShadow = true;
@@ -31,7 +41,7 @@ export function cylZ(rTop, rBot, h, seg, mat, x = 0, y = 0, z = 0) {
 }
 
 export function sphere(r, mat, x = 0, y = 0, z = 0, detail = 0) {
-  const m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, detail), mat);
+  const m = new THREE.Mesh(cachedGeometry(`ico|${r}|${detail}`, () => new THREE.IcosahedronGeometry(r, detail)), mat);
   m.position.set(x, y, z);
   m.castShadow = true;
   return m;
@@ -39,7 +49,7 @@ export function sphere(r, mat, x = 0, y = 0, z = 0, detail = 0) {
 
 // Faceted capsule — nicer limb/joint silhouette than a box, still low-poly.
 export function capsule(r, len, mat, x = 0, y = 0, z = 0, radial = 6, caps = 2) {
-  const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, len, caps, radial), mat);
+  const m = new THREE.Mesh(cachedGeometry(`capsule|${r}|${len}|${radial}|${caps}`, () => new THREE.CapsuleGeometry(r, len, caps, radial)), mat);
   m.position.set(x, y, z);
   m.castShadow = true;
   m.receiveShadow = true;

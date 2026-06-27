@@ -105,14 +105,33 @@ export const ASSETS = [
   {
     id: 'helmet_breaker', displayName: 'Breaker Helmet', category: 'cosmetic', slot: 'head',
     pipeline: 'coded', module: 'asset-lib/cosmetics/helmet_breaker.js',
-    budgets: { maxTriangles: 200, maxMaterials: 4 }, rarity: 'uncommon',
-    tags: ['cosmetic', 'universal'], status: 'active',
+    budgets: { maxTriangles: 200, maxMaterials: 4 }, rarity: 'uncommon', tier: 'starter',
+    tags: ['cosmetic', 'universal', 'starter'], status: 'active',
   },
   {
     id: 'backpack_runner', displayName: 'Runner Pack', category: 'cosmetic', slot: 'backpack',
     pipeline: 'coded', module: 'asset-lib/cosmetics/backpack_runner.js',
-    budgets: { maxTriangles: 200, maxMaterials: 4 }, rarity: 'common',
-    tags: ['cosmetic', 'universal'], status: 'active',
+    budgets: { maxTriangles: 200, maxMaterials: 4 }, rarity: 'common', tier: 'starter',
+    tags: ['cosmetic', 'universal', 'starter'], status: 'active',
+  },
+  {
+    id: 'face_dust_mask', displayName: 'Dust Mask', category: 'cosmetic', slot: 'face',
+    pipeline: 'coded', module: 'asset-lib/cosmetics/face_dust_mask.js',
+    budgets: { maxTriangles: 160, maxMaterials: 4 }, rarity: 'common', tier: 'starter',
+    tags: ['cosmetic', 'universal', 'starter'], status: 'active',
+  },
+  {
+    id: 'hip_signal_flare', displayName: 'Signal Flare', category: 'cosmetic', slot: 'hip',
+    pipeline: 'coded', module: 'asset-lib/cosmetics/hip_signal_flare.js',
+    budgets: { maxTriangles: 160, maxMaterials: 4 }, rarity: 'common', tier: 'starter',
+    tags: ['cosmetic', 'universal', 'starter'], status: 'active',
+  },
+  {
+    id: 'aura_corewake', displayName: 'Core Wake', category: 'cosmetic', slot: 'aura',
+    pipeline: 'coded', module: 'asset-lib/cosmetics/aura_corewake.js',
+    budgets: { maxTriangles: 420, maxMaterials: 4 }, rarity: 'rare', tier: 'advanced',
+    unlock: { level: 3, item: 'Core Shard', qty: 1 },
+    tags: ['cosmetic', 'universal', 'advanced', 'glow'], status: 'active',
   },
 ];
 

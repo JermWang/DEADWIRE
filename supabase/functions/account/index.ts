@@ -52,12 +52,14 @@ async function issueToken(wallet: string, pid: string) {
 }
 async function verifyToken(token: string) {
   if (!token || token.indexOf(".") < 0) return null;
-  const [payload, sig] = token.split(".");
-  const ok = await crypto.subtle.verify("HMAC", await hmacKey(), b64urlToBytes(sig), enc.encode(payload));
-  if (!ok) return null;
-  let data: any; try { data = JSON.parse(dec.decode(b64urlToBytes(payload))); } catch { return null; }
-  if (!data?.exp || data.exp < Date.now()) return null;
-  return data as { w: string; pid: string; exp: number };
+  try {
+    const [payload, sig] = token.split(".");
+    const ok = await crypto.subtle.verify("HMAC", await hmacKey(), b64urlToBytes(sig), enc.encode(payload));
+    if (!ok) return null;
+    const data: any = JSON.parse(dec.decode(b64urlToBytes(payload)));
+    if (!data?.exp || data.exp < Date.now()) return null;
+    return data as { w: string; pid: string; exp: number };
+  } catch { return null; }   // malformed token => unauthorized, never a 500
 }
 
 const CUR: Record<string, string> = { Scrap: "SCRAP", Ammo: "AMMO", Components: "COMPONENTS", Parts: "PARTS", Med: "MED", Gold: "GOLD", "Core Shard": "CORE_SHARD", Core: "CORE" };
@@ -133,6 +135,50 @@ async function handleApplyRun(body: any) {
   return json({ stash: await snapshot(fresh) });
 }
 
+async function getConfig() {
+  const { data } = await admin.from("app_config").select("key,value");
+  const c: Record<string, string> = {};
+  for (const r of data || []) c[r.key] = r.value ?? "";
+  return c;
+}
+// $DEAD credited to the treasury in this tx = treasury's post balance - pre balance.
+function deadToTreasury(tx: any, mint: string, treasury: string) {
+  const pre = tx?.meta?.preTokenBalances || [];
+  const post = tx?.meta?.postTokenBalances || [];
+  const f = (arr: any[]) => arr.find((b: any) => b.mint === mint && b.owner === treasury);
+  const before = Number(f(pre)?.uiTokenAmount?.uiAmount || 0);
+  const after = Number(f(post)?.uiTokenAmount?.uiAmount || 0);
+  return Math.max(0, after - before);
+}
+async function handleBuyGold(body: any) {
+  const t = await verifyToken(String(body.token || ""));
+  if (!t) return json({ error: "unauthorized" }, 401);
+  const txSig = String(body.txSig || "");
+  if (!txSig) return json({ error: "missing txSig" }, 400);
+  const cfg = await getConfig();
+  if (!cfg.dead_mint || !cfg.treasury) return json({ error: "store not configured" }, 503);
+  // idempotency: never credit the same on-chain tx twice
+  const { data: dup } = await admin.from("settlements").select("id").eq("tx_sig", txSig).maybeSingle();
+  if (dup) return json({ error: "already settled" }, 409);
+  const rpc = cfg.solana_rpc || "https://api.mainnet-beta.solana.com";
+  const r = await fetch(rpc, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getTransaction", params: [txSig, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0, commitment: "confirmed" }] }),
+  });
+  const j = await r.json().catch(() => ({}));
+  const tx = j?.result;
+  if (!tx || tx.meta?.err) return json({ error: "tx not found or failed" }, 400);
+  const dead = deadToTreasury(tx, cfg.dead_mint, cfg.treasury);
+  if (dead <= 0) return json({ error: "no $DEAD transfer to treasury in tx" }, 400);
+  const gold = Math.floor(dead * Number(cfg.gold_per_dead || "0"));
+  await admin.from("settlements").insert({ tx_sig: txSig, profile_id: t.pid, wallet: t.w, kind: "buy_gold", dead_amount: dead, gold_amount: gold });
+  await bumpItem(t.pid, "Gold", gold);
+  await admin.from("economy_ledger").insert({ profile_id: t.pid, currency: "GOLD", delta: gold, reason: "buy_gold:$DEAD", tx_sig: txSig });
+  const { data: fresh } = await admin.from("profiles").select("*").eq("id", t.pid).single();
+  return json({ credited: gold, deadAmount: dead, stash: await snapshot(fresh) });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
@@ -143,6 +189,7 @@ Deno.serve(async (req) => {
       case "login": return await handleLogin(body);
       case "save": return await handleSave(body);
       case "applyRun": return await handleApplyRun(body);
+      case "buyGold": return await handleBuyGold(body);
       default: return json({ error: "unknown action" }, 400);
     }
   } catch (e) { return json({ error: String((e as Error)?.message || e) }, 500); }

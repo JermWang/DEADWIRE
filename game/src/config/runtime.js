@@ -14,6 +14,14 @@ export const RUNTIME = {
   // Solana — MAINNET. Non-custodial: players sign with their own wallet.
   solanaCluster: 'mainnet-beta',
   solanaRpc: 'https://api.mainnet-beta.solana.com',
+
+  // $DEAD — on-chain hard currency (SPL, mainnet). Gold is in-game only and is
+  // bought with $DEAD. Fill these in AFTER creating the mint (see TOKEN.md); keep
+  // them in sync with the server's app_config row. Until set, the $DEAD store path
+  // stays disabled (the game still runs; Gold just can't be purchased yet).
+  deadMint: '',        // $DEAD SPL mint address
+  treasury: '',        // treasury wallet pubkey that receives $DEAD payments
+  goldPerDead: 1000,   // in-game Gold credited per 1 $DEAD
 };
 
 // Resolve the websocket base for the match server (handles ws/wss + local dev).

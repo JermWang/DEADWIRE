@@ -9,6 +9,7 @@ import { BREAKER_YARD as GAMEPLAY } from './mapDef.js';
 import { createDeadwirePOIAssets } from './DeadwireMapAssetFactory.js';
 import { DistantBackdrop } from './DistantBackdrop.js';
 import { VegetationField } from './VegetationField.js';
+import { disposeObjectTree } from '../render/dispose.js';
 
 const MAP_LINEAR_SCALE = Math.sqrt(5);
 
@@ -247,7 +248,6 @@ export class BreakerYard {
   }
 
   dispose() {
-    this.backdrop?.dispose();
-    this.vegetation?.dispose();
+    disposeObjectTree(this.root);
   }
 }

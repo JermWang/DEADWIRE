@@ -7,7 +7,8 @@ import { PlayerAnimator } from './PlayerAnimator.js';
 
 export class Player {
   constructor(cosmetics = {}) {
-    this.mesh = buildAsset('char_runner', { pose: 'aim' });
+    const { _colors = {}, ...equipped } = cosmetics;
+    this.mesh = buildAsset('char_runner', { pose: 'aim', colors: _colors });
     this.mesh.updateWorldMatrix(true, true);
     this.grip = this.mesh.getObjectByName(this.mesh.userData.weaponSocketName || 'hand_r') || this.mesh;
 
@@ -23,7 +24,7 @@ export class Player {
     this.weapons[0].visible = true;
 
     // optional cosmetics: { head:'helmet_breaker', backpack:'backpack_runner', ... }
-    for (const [slot, id] of Object.entries(cosmetics)) {
+    for (const [slot, id] of Object.entries(equipped)) {
       if (!id) continue;
       const cos = buildAsset(id);
       const socket = this.mesh.getObjectByName(slot);

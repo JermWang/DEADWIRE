@@ -8,6 +8,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { buildAsset, byCategory, mountWeaponToSocket, PALETTE } from '../assets.js';
 import { makeSky } from '../render/Sky.js';
+import { disposeObjectTree } from '../render/dispose.js';
 import { Stash } from '../systems/Stash.js';
 import { Account } from '../net/account.js';
 import { Wallet } from '../net/wallet.js';
@@ -16,11 +17,19 @@ export class MainMenu {
   constructor(root, { onPlay }) {
     this.root = root;
     this.onPlay = onPlay;
-    this.loadout = {};            // slot -> cosmetic id
-    this.tint = '#3b4a5a';
+    this.profile = Stash.load().profile;
+    this.loadout = { ...this.profile.equipped };            // slot -> cosmetic id
+    this.tint = this.profile.tint || '#3b4a5a';
+    this.title = this.profile.title || 'YARD ROOKIE';
     this.running = false;
     this.dragging = false;
     this.spin = 0;
+    this._onMouseUp = () => { this.dragging = false; };
+    this._onMouseMove = (e) => {
+      if (!this.dragging) return;
+      this.spin += (e.clientX - this._lastX) * 0.01;
+      this._lastX = e.clientX;
+    };
     this._build();
   }
 
@@ -30,7 +39,7 @@ export class MainMenu {
     const slots = [...new Set(cosmetics.map((c) => c.slot))];
 
     this.el = document.createElement('div');
-    this.el.className = 'menu';
+    this.el.className = `menu ${this.profile.onboarded ? '' : 'profile-needed'}`;
     this.el.innerHTML = `
       <div class="menu-bg"></div>
       <div class="menu-grid">
@@ -40,7 +49,7 @@ export class MainMenu {
           <div class="menu-actions">
             <button class="m-btn primary" data-act="solo"><span class="k">▶</span> PLAY · CORE RUN</button>
             <button class="m-btn" data-act="online"><span class="k">◈</span> PLAY ONLINE</button>
-            <button class="m-btn" data-act="loadout"><span class="k">✦</span> LOADOUT</button>
+            <button class="m-btn" data-act="loadout"><span class="k">✦</span> CUSTOMIZE RUNNER</button>
             <button class="m-btn" data-act="wallet"><span class="k">⬡</span> CONNECT WALLET</button>
           </div>
           <div class="wallet-status" id="walletStatus">Solana · mainnet · not connected</div>
@@ -62,57 +71,97 @@ export class MainMenu {
         </div>
 
         <div class="menu-right" id="loadoutPanel">
-          <div class="lo-title">LOADOUT</div>
+          <div class="lo-title">RUNNER PROFILE</div>
+          <div class="profile-state" id="profileState">${this.profile.onboarded ? this.title : 'NEW RUNNER'}</div>
           <div class="lo-field">
             <label>Callsign</label>
             <input id="callsign" maxlength="14" placeholder="Runner" />
+          </div>
+          <div class="lo-field">
+            <label>Title</label>
+            <select id="profileTitle">
+              <option value="YARD ROOKIE">Yard Rookie</option>
+              <option value="SCRAP RUNNER">Scrap Runner</option>
+              <option value="CORE PROSPECT">Core Prospect</option>
+            </select>
           </div>
           <div id="loSlots"></div>
           <div class="lo-field">
             <label>Jacket tint</label>
             <div class="swatches" id="tints"></div>
           </div>
+          <div class="lo-title mini">COSMETIC VAULT</div>
+          <div class="cosmetic-vault" id="cosmeticVault"></div>
+          <button class="profile-save" data-act="saveProfile">SAVE RUNNER</button>
         </div>
       </div>`;
     this.root.appendChild(this.el);
+    this.el.querySelector('#callsign').value = this.profile.callsign || 'Runner';
+    this.el.querySelector('#profileTitle').value = this.title;
 
     // loadout slot selectors
     const loSlots = this.el.querySelector('#loSlots');
-    for (const slot of slots) {
+    const slotOrder = ['head', 'face', 'backpack', 'hip', 'aura'];
+    const orderedSlots = [
+      ...slotOrder.filter((slot) => slots.includes(slot)),
+      ...slots.filter((slot) => !slotOrder.includes(slot)),
+    ];
+    for (const slot of orderedSlots) {
       const opts = cosmetics.filter((c) => c.slot === slot);
       const wrap = document.createElement('div');
       wrap.className = 'lo-field';
       wrap.innerHTML = `<label>${slot}</label>`;
       const sel = document.createElement('select');
       sel.innerHTML = `<option value="">None</option>` +
-        opts.map((o) => `<option value="${o.id}">${o.displayName} · ${o.rarity || 'common'}</option>`).join('');
-      sel.onchange = () => { this.loadout[slot] = sel.value || undefined; this._rebuildHero(); };
+        opts.map((o) => {
+          const unlocked = Stash.isCosmeticUnlocked(o, stash);
+          const locked = unlocked ? '' : ' disabled';
+          const state = unlocked ? (o.tier || 'starter') : this._unlockText(o);
+          return `<option value="${o.id}"${locked}>${o.displayName} · ${o.rarity || 'common'} · ${state}</option>`;
+        }).join('');
+      if (this.loadout[slot] && !Stash.isCosmeticUnlocked(opts.find((o) => o.id === this.loadout[slot]), stash)) {
+        this.loadout[slot] = undefined;
+      }
+      sel.value = this.loadout[slot] || '';
+      sel.onchange = () => {
+        this.loadout[slot] = sel.value || undefined;
+        this._rebuildHero();
+        this._markProfileDirty();
+      };
       wrap.appendChild(sel);
       loSlots.appendChild(wrap);
     }
+    this._renderVault(cosmetics, stash);
 
     // jacket tint swatches
     const tints = ['#3b4a5a', '#5a3b4a', '#3b5a44', '#5a4f3b', '#46405a', '#222a2f'];
     const tintWrap = this.el.querySelector('#tints');
     tints.forEach((hex, i) => {
       const s = document.createElement('button');
-      s.className = 'swatch' + (i === 0 ? ' on' : '');
+      s.className = 'swatch' + (hex.toLowerCase() === this.tint.toLowerCase() ? ' on' : '');
       s.style.background = hex;
       s.onclick = () => {
         this.tint = hex;
         tintWrap.querySelectorAll('.swatch').forEach((x) => x.classList.remove('on'));
         s.classList.add('on');
         this._rebuildHero();
+        this._markProfileDirty();
       };
       tintWrap.appendChild(s);
     });
+    this.el.querySelector('#callsign').oninput = () => this._markProfileDirty();
+    this.el.querySelector('#profileTitle').onchange = () => {
+      this.title = this.el.querySelector('#profileTitle').value;
+      this._markProfileDirty();
+    };
 
     // actions
-    this.el.querySelectorAll('.m-btn').forEach((b) => {
+    this.el.querySelectorAll('[data-act]').forEach((b) => {
       b.onclick = () => {
         const act = b.dataset.act;
         if (act === 'loadout') { this.el.classList.toggle('show-loadout'); return; }
         if (act === 'wallet') { this._connectWallet(); return; }
+        if (act === 'saveProfile') { this._saveProfile(true); return; }
         this._play(act === 'online');
       };
     });
@@ -173,10 +222,48 @@ export class MainMenu {
     set('#msExtractions', s.extractions);
   }
 
+  _unlockText(cosmetic) {
+    if (!cosmetic?.unlock) return 'locked';
+    const bits = [];
+    if (cosmetic.unlock.level) bits.push(`Lv ${cosmetic.unlock.level}`);
+    if (cosmetic.unlock.item) bits.push(`${cosmetic.unlock.qty || 1} ${cosmetic.unlock.item}`);
+    return bits.join(' + ');
+  }
+
+  _renderVault(cosmetics, stash) {
+    const vault = this.el.querySelector('#cosmeticVault');
+    vault.innerHTML = cosmetics.map((cosmetic) => {
+      const unlocked = Stash.isCosmeticUnlocked(cosmetic, stash);
+      return `<div class="${unlocked ? 'unlocked' : 'locked'}">
+        <b>${cosmetic.displayName}</b>
+        <span>${cosmetic.slot} · ${cosmetic.rarity || 'common'} · ${unlocked ? 'owned' : this._unlockText(cosmetic)}</span>
+      </div>`;
+    }).join('');
+  }
+
+  _markProfileDirty() {
+    const state = this.el.querySelector('#profileState');
+    if (state) state.textContent = 'PROFILE UNSAVED';
+  }
+
+  _saveProfile(onboarded = true) {
+    const equipped = {};
+    for (const [slot, id] of Object.entries(this.loadout)) if (id) equipped[slot] = id;
+    const callsign = (this.el.querySelector('#callsign').value || 'Runner').slice(0, 14);
+    const title = this.el.querySelector('#profileTitle').value || 'YARD ROOKIE';
+    this.title = title;
+    this.profile = Stash.saveProfile({ onboarded, callsign, title, tint: this.tint, equipped });
+    this.el.classList.remove('profile-needed');
+    const state = this.el.querySelector('#profileState');
+    if (state) state.textContent = title;
+    return this.profile;
+  }
+
   _play(online) {
-    const name = (this.el.querySelector('#callsign').value || 'Runner').slice(0, 14);
+    const profile = this._saveProfile(true);
+    const name = profile.callsign;
     this.destroy();
-    this.onPlay({ ...this.loadout }, online, name);
+    this.onPlay({ ...profile.equipped, _colors: { jacket: profile.tint } }, online, name);
   }
 
   // ---- 3D hero render ----
@@ -218,8 +305,8 @@ export class MainMenu {
 
     // drag to rotate
     canvas.addEventListener('mousedown', (e) => { this.dragging = true; this._lastX = e.clientX; });
-    addEventListener('mouseup', () => { this.dragging = false; });
-    addEventListener('mousemove', (e) => { if (this.dragging) { this.spin += (e.clientX - this._lastX) * 0.01; this._lastX = e.clientX; } });
+    addEventListener('mouseup', this._onMouseUp);
+    addEventListener('mousemove', this._onMouseMove);
 
     // bloom composer (makes the visor / core ring / glows pop like a real engine)
     const w = canvas.clientWidth || 1280, h = canvas.clientHeight || 720;
@@ -234,6 +321,7 @@ export class MainMenu {
 
   _rebuildHero() {
     if (!this.heroGroup) return;
+    disposeObjectTree(this.heroGroup);
     this.heroGroup.clear();
     const hero = buildAsset('char_runner', { pose: 'aim', colors: { jacket: this.tint } });
     hero.updateWorldMatrix(true, true);
@@ -266,6 +354,9 @@ export class MainMenu {
 
   destroy() {
     this.running = false;
+    removeEventListener('mouseup', this._onMouseUp);
+    removeEventListener('mousemove', this._onMouseMove);
+    disposeObjectTree(this.scene);
     try { this.composer?.dispose?.(); } catch { /* noop */ }
     try { this.renderer?.dispose(); } catch { /* noop */ }
     this.el.remove();

@@ -11,6 +11,9 @@ import { build as prop_loot_crate } from './prop_loot_crate.js?v=wii-voxel-toy-v
 import { build as obj_unstable_core } from './obj_unstable_core.js?v=wii-voxel-toy-v3';
 import { build as helmet_breaker } from '../cosmetics/helmet_breaker.js?v=wii-voxel-toy-v3';
 import { build as backpack_runner } from '../cosmetics/backpack_runner.js?v=wii-voxel-toy-v3';
+import { build as face_dust_mask } from '../cosmetics/face_dust_mask.js?v=wii-voxel-toy-v3';
+import { build as hip_signal_flare } from '../cosmetics/hip_signal_flare.js?v=wii-voxel-toy-v3';
+import { build as aura_corewake } from '../cosmetics/aura_corewake.js?v=wii-voxel-toy-v3';
 import * as world from './world_kit.js?v=wii-voxel-toy-v3';
 
 export const BUILDERS = {
@@ -25,6 +28,9 @@ export const BUILDERS = {
   obj_unstable_core,
   helmet_breaker,
   backpack_runner,
+  face_dust_mask,
+  hip_signal_flare,
+  aura_corewake,
   // world kit
   reactor_tower: world.reactor_tower,
   generator: world.generator,

@@ -23,6 +23,7 @@ import { RemotePlayer } from '../entities/RemotePlayer.js';
 import { PostFX } from '../render/PostFX.js';
 import { ObjectiveIndicator } from '../render/ObjectiveIndicator.js';
 import { makeSky } from '../render/Sky.js';
+import { disposeObjectTree } from '../render/dispose.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mat, PALETTE } from '../assets.js';
 
@@ -282,15 +283,19 @@ export class Game {
     }
     if (this.hud) this.hud.el.remove();
     for (const arr of ['enemies', 'crates', 'extracts']) {
-      (this[arr] || []).forEach((o) => this.scene.remove(o.mesh || o.group));
+      (this[arr] || []).forEach((o) => {
+        const root = o.mesh || o.group;
+        this.scene.remove(root);
+        disposeObjectTree(root);
+      });
     }
-    (this.projectiles || []).forEach((p) => this.scene.remove(p.mesh));
-    (this.particles || []).forEach((p) => this.scene.remove(p.mesh));
+    (this.projectiles || []).forEach((p) => { this.scene.remove(p.mesh); disposeObjectTree(p.mesh); });
+    (this.particles || []).forEach((p) => { this.scene.remove(p.mesh); disposeObjectTree(p.mesh); });
     this.particles = [];
-    if (this.player) this.scene.remove(this.player.mesh);
-    if (this.core) this.scene.remove(this.core.mesh);
-    if (this.pingRing) this.scene.remove(this.pingRing);
-    if (this.flash) this.scene.remove(this.flash);
+    if (this.player) { this.scene.remove(this.player.mesh); disposeObjectTree(this.player.mesh); }
+    if (this.core) { this.scene.remove(this.core.mesh); disposeObjectTree(this.core.mesh); }
+    if (this.pingRing) { this.scene.remove(this.pingRing); disposeObjectTree(this.pingRing); }
+    if (this.flash) { this.scene.remove(this.flash); disposeObjectTree(this.flash); }
     if (this.objectiveIndicators) {
       for (const marker of this.objectiveIndicators) {
         this.scene.remove(marker.root);
@@ -301,6 +306,7 @@ export class Game {
 
     this.timeLeft = CONFIG.match.durationSec;
     this.run = { loot: {}, machines: 0, players: 0, coreExtracted: false, coreLost: false };
+    this.defeatedRemoteIds = new Set();
     this.coreSpawned = false;
     this.pingTimer = CONFIG.player.pingIntervalSec;
     this.extractHold = 0;
@@ -522,7 +528,10 @@ export class Game {
   }
 
   _spawnDebris(pos, color, count = 8) {
-    this._debrisGeo = this._debrisGeo || new THREE.BoxGeometry(0.16, 0.16, 0.16);
+    if (!this._debrisGeo) {
+      this._debrisGeo = new THREE.BoxGeometry(0.16, 0.16, 0.16);
+      this._debrisGeo.userData.deadwireShared = true;
+    }
     for (let i = 0; i < count; i++) {
       const m = new THREE.Mesh(this._debrisGeo, mat(color, { flat: true }));
       m.position.copy(pos); m.position.y = 0.4 + Math.random() * 0.4;
@@ -637,6 +646,11 @@ export class Game {
             const hitR = r.radius + p.radius;
             if (dx * dx + dz * dz < hitR * hitR) {
               this.hud.popDamage(r.position, p.damage, 'enemy');
+              if (r.hp > 0 && r.hp - p.damage <= 0 && !this.defeatedRemoteIds.has(r.id)) {
+                this.defeatedRemoteIds.add(r.id);
+                this.run.players += 1;
+                this.hud.banner(`Runner defeated (${this.run.players})`, 1200);
+              }
               this.net.send({ t: 'hit', target: r.id, dmg: p.damage });
               hit = true; break;
             }

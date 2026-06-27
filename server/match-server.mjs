@@ -10,6 +10,7 @@ import { CONFIG } from '../game/src/data/config.js';
 // Railway (and most PaaS) inject PORT; fall back to MATCH_PORT then the dev default.
 const PORT = Number(process.env.PORT || process.env.MATCH_PORT || 5181);
 const HOST = process.env.HOST || '0.0.0.0';
+const MAX_LOBBY = 6;
 const clients = new Map(); // id -> Client
 const lobbies = new Map(); // partyCode -> Map<id, LobbyClient>
 let nextId = 1;
@@ -56,13 +57,18 @@ class LobbyClient {
     this.name = String(url.searchParams.get('name') || 'Runner').slice(0, 14);
     this.ready = false;
     const lobby = lobbies.get(this.partyCode) || new Map();
+    if (lobby.size >= MAX_LOBBY) {
+      conn.send(JSON.stringify({ t: 'lobby_error', message: 'PARTY FULL' }));
+      conn.close();
+      return;
+    }
     lobby.set(this.id, this);
     lobbies.set(this.partyCode, lobby);
 
     conn.on('message', (raw) => this._onMessage(raw));
     conn.on('close', () => this._onClose());
     broadcastLobby(this.partyCode);
-    console.log(`[lobby] ${this.name} joined ${this.partyCode} (${lobby.size}/4)`);
+    console.log(`[lobby] ${this.name} joined ${this.partyCode} (${lobby.size}/${MAX_LOBBY})`);
   }
 
   _onMessage(raw) {

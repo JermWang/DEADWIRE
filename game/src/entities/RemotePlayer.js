@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { buildAsset, mat, mountWeaponToSocket, PALETTE } from '../assets.js';
 import { PlayerAnimator } from './PlayerAnimator.js';
+import { disposeObjectTree } from '../render/dispose.js';
 
 function nameplate(text) {
   const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64;
@@ -66,5 +67,8 @@ export class RemotePlayer {
     });
   }
 
-  dispose(scene) { scene.remove(this.mesh); }
+  dispose(scene) {
+    scene.remove(this.mesh);
+    disposeObjectTree(this.mesh);
+  }
 }

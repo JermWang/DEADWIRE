@@ -67,6 +67,16 @@ export const Account = {
     await call('save', { token: this.token, stash });
   },
 
+  // Settle a confirmed on-chain $DEAD payment -> credit in-game Gold. The server
+  // re-verifies the tx on mainnet (amount to treasury, idempotent per signature),
+  // so a spoofed sig credits nothing. Returns { credited, deadAmount, stash }.
+  async buyGold(txSig) {
+    if (!this.token) throw new Error('connect wallet first');
+    const res = await call('buyGold', { token: this.token, txSig });
+    if (res.stash) Stash.save(this._normalize(res.stash));
+    return res;
+  },
+
   _normalize(s) {
     return {
       items: s.items || {},
@@ -74,6 +84,7 @@ export const Account = {
       level: s.level || 1,
       runs: s.runs || 0,
       extractions: s.extractions || 0,
+      profile: s.profile,
     };
   },
 };

@@ -8,8 +8,12 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { buildAsset, mat, mountWeaponToSocket, PALETTE } from '../assets.js';
 import { makeSky } from '../render/Sky.js';
+import { DistantBackdrop } from '../world/DistantBackdrop.js';
+import { disposeObjectTree } from '../render/dispose.js';
 import { Stash } from '../systems/Stash.js';
 import { matchWsBase } from '../config/runtime.js';
+
+const MAX_PARTY = 6;
 
 function makePartyCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -27,6 +31,7 @@ class PartyClient {
 
   connect(code, name) {
     this.disconnect();
+    this.lastError = '';
     const url = `${matchWsBase()}/lobby?party=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}`;
     this.onStatus('CONNECTING');
     try { this.ws = new WebSocket(url); }
@@ -36,9 +41,13 @@ class PartyClient {
       let message; try { message = JSON.parse(event.data); } catch { return; }
       if (message.t === 'lobby_roster') this.onRoster(message);
       if (message.t === 'lobby_launch') this.onLaunch();
+      if (message.t === 'lobby_error') {
+        this.lastError = message.message || 'PARTY ERROR';
+        this.onStatus(this.lastError);
+      }
     };
     this.ws.onerror = () => this.onStatus('PARTY SERVER OFFLINE');
-    this.ws.onclose = () => this.onStatus('PARTY DISCONNECTED');
+    this.ws.onclose = () => this.onStatus(this.lastError || 'PARTY DISCONNECTED');
   }
 
   update(payload) { this.send({ t: 'lobby_update', ...payload }); }
@@ -150,7 +159,7 @@ export class Lobby {
     this.party = new PartyClient({
       onRoster: (message) => {
         this.partyCode = message.partyCode;
-        this.members = message.members.slice(0, 4);
+        this.members = message.members.slice(0, MAX_PARTY);
         const mine = this.members.find((member) => member.name === this.name);
         if (mine) this.localReady = mine.ready;
         this._renderParty();
@@ -242,7 +251,7 @@ export class Lobby {
 
     const roster = this.el.querySelector('#partyRoster');
     roster.innerHTML = '';
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < MAX_PARTY; i++) {
       const member = this.members[i];
       const row = document.createElement('div');
       row.className = `party-member ${member?.ready ? 'ready' : ''} ${member ? '' : 'empty'}`;
@@ -253,11 +262,12 @@ export class Lobby {
     }
 
     const labels = this.el.querySelector('#stageLabels');
-    labels.innerHTML = this.members.map((member) =>
-      `<div class="${member.ready ? 'ready' : ''}"><b>${member.name}</b><span>${member.ready ? 'READY' : member.leader ? 'LEADER' : 'NOT READY'}</span></div>`
-    ).join('') + Array.from({ length: 4 - this.members.length }, () =>
-      '<div class="empty"><b>OPEN SLOT</b><span>INVITE</span></div>'
-    ).join('');
+    labels.innerHTML = Array.from({ length: MAX_PARTY }, (_, index) => {
+      const member = this.members[index];
+      return member
+        ? `<div data-slot="${index}" class="${member.ready ? 'ready' : ''}"><b>${member.name}</b><span>${member.ready ? 'READY' : member.leader ? 'LEADER' : 'NOT READY'}</span></div>`
+        : `<div data-slot="${index}" class="empty"><b>OPEN SLOT</b><span>INVITE</span></div>`;
+    }).join('');
 
     this._rebuildModels();
     this._renderReady();
@@ -291,10 +301,17 @@ export class Lobby {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.2;
     this.scene = new THREE.Scene();
+    this.scene.fog = new THREE.Fog(0x6f695a, 18, 82);
     this.scene.add(makeSky({ top: '#172733', horizon: '#6f695a' }));
     this.camera = new THREE.PerspectiveCamera(34, 1, 0.1, 300);
-    this.camera.position.set(0, 2.15, 8.4);
-    this.camera.lookAt(0, 1.05, 0);
+    this.camera.position.set(0, 2.4, 10.2);
+    this.camera.lookAt(0, 1.05, -0.35);
+    this.backdrop = new DistantBackdrop({
+      min: { x: -34, z: -24 },
+      max: { x: 34, z: 24 },
+    });
+    this.backdrop.root.position.y = -0.22;
+    this.scene.add(this.backdrop.root);
 
     this.scene.add(new THREE.HemisphereLight(0xcde8ff, 0x41352d, 2.5));
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.42));
@@ -303,21 +320,26 @@ export class Lobby {
 
     this.partyRoot = new THREE.Group();
     this.scene.add(this.partyRoot);
-    // Keep the complete squad inside the playable center column; the outer UI
-    // rails otherwise obscure the leader at standard 16:9 app sizes.
-    // Center-first ordering keeps the leader prominent, then expands the party
-    // outward as friends join.
-    const positions = [-0.45, 0.45, -1.35, 1.35];
-    for (let i = 0; i < 4; i++) {
+    const slots = [
+      { x: -1.12, z: 0.28, scale: 1.03 },
+      { x: 1.12, z: 0.28, scale: 1.0 },
+      { x: -3.25, z: -0.55, scale: 0.92 },
+      { x: 3.25, z: -0.55, scale: 0.92 },
+      { x: -2.0, z: -1.62, scale: 0.86 },
+      { x: 2.0, z: -1.62, scale: 0.86 },
+    ];
+    for (let i = 0; i < MAX_PARTY; i++) {
+      const layout = slots[i];
       const platform = new THREE.Group();
-      platform.position.set(positions[i], -0.05, i === 0 || i === 3 ? -0.22 : 0.12);
+      platform.position.set(layout.x, -0.05, layout.z);
+      platform.scale.setScalar(layout.scale);
       const base = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.74, 0.92, 0.24, 8),
+        new THREE.CylinderGeometry(0.68, 0.84, 0.24, 8),
         mat(PALETTE.steelDark, { metal: 0.42, rough: 0.52 }),
       );
       platform.add(base);
       const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(0.76, 0.025, 5, 32),
+        new THREE.TorusGeometry(0.7, 0.024, 5, 32),
         mat(PALETTE.coreGlow, { emissive: PALETTE.coreGlow, emissiveIntensity: 2.1 }),
       );
       ring.rotation.x = Math.PI / 2;
@@ -344,11 +366,39 @@ export class Lobby {
     this._loop();
   }
 
+  _updateResponsiveCamera(w, h) {
+    const narrow = w < 700 || w / Math.max(1, h) < 1.05;
+    this.camera.position.set(0, narrow ? 2.75 : 2.4, narrow ? 11.35 : 10.2);
+    this.camera.lookAt(0, narrow ? 1.18 : 1.05, narrow ? -0.9 : -0.35);
+    this.partyRoot.position.set(0, narrow ? 0.24 : 0, narrow ? -0.75 : 0);
+    this.partyRoot.scale.setScalar(narrow ? 0.86 : 1);
+  }
+
+  _updateStageLabels() {
+    const labels = this.el.querySelector('#stageLabels');
+    if (!labels) return;
+    const labelRect = labels.getBoundingClientRect();
+    const canvasRect = this.renderer.domElement.getBoundingClientRect();
+    if (!labelRect.width || !labelRect.height) return;
+    this._labelWorld = this._labelWorld || new THREE.Vector3();
+    this.platforms.forEach((platform, index) => {
+      const label = labels.querySelector(`[data-slot="${index}"]`);
+      if (!label) return;
+      this._labelWorld.set(0, 0.22, 0);
+      platform.localToWorld(this._labelWorld);
+      this._labelWorld.project(this.camera);
+      const x = (this._labelWorld.x * 0.5 + 0.5) * canvasRect.width + canvasRect.left - labelRect.left;
+      const y = (-this._labelWorld.y * 0.5 + 0.5) * canvasRect.height + canvasRect.top - labelRect.top + 72 * platform.scale.x;
+      label.style.transform = `translate(${x}px, ${y}px) translate(-50%, 0)`;
+    });
+  }
+
   _rebuildModels() {
     if (!this.platforms.length) return;
-    const tints = ['#2f78b7', '#7c4353', '#3f7658', '#8a6a38'];
+    const tints = ['#2f78b7', '#7c4353', '#3f7658', '#8a6a38', '#46405a', '#4b6f76'];
     for (let i = 0; i < this.platforms.length; i++) {
       const slot = this.platforms[i].userData.model;
+      disposeObjectTree(slot);
       slot.clear();
       const member = this.members[i];
       this.platforms[i].userData.ring.material.emissiveIntensity = member?.ready ? 3.4 : member ? 1.7 : 0.7;
@@ -361,11 +411,13 @@ export class Lobby {
         slot.add(plus);
         continue;
       }
-      const runner = buildAsset('char_runner', { pose: 'aim', colors: { jacket: tints[i] } });
+      const localColors = i === 0 ? this.loadout._colors : null;
+      const runner = buildAsset('char_runner', { pose: 'aim', colors: { jacket: localColors?.jacket || tints[i] } });
       const hand = runner.getObjectByName(runner.userData.weaponSocketName || 'hand_r') || runner;
       mountWeaponToSocket(buildAsset('weapon_scrap_pistol'), hand);
       if (i === 0) {
         for (const [socketName, id] of Object.entries(this.loadout)) {
+          if (socketName.startsWith('_')) continue;
           if (!id) continue;
           (runner.getObjectByName(socketName) || runner).add(buildAsset(id));
         }
@@ -387,19 +439,23 @@ export class Lobby {
       this.camera.updateProjectionMatrix();
       this.composer.setSize(w, h);
     }
+    this._updateResponsiveCamera(w, h);
     const time = performance.now() * 0.001;
+    this.backdrop?.update(time);
     this.platforms.forEach((platform, index) => {
       platform.position.y = platform.userData.baseY + Math.sin(time * 1.25 + index * 0.8) * 0.055;
       const model = platform.userData.model;
       if (model.children[0]) model.children[0].rotation.y = Math.sin(time * 0.5 + index) * 0.12;
     });
     this.partyRoot.rotation.y = Math.sin(time * 0.16) * 0.035;
+    this._updateStageLabels();
     this.composer.render(dt);
   }
 
   destroy() {
     this.running = false;
     this.party?.disconnect();
+    disposeObjectTree(this.scene);
     try { this.composer?.dispose?.(); } catch { /* noop */ }
     try { this.renderer?.dispose(); } catch { /* noop */ }
     this.el.remove();

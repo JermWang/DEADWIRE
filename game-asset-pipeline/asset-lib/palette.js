@@ -73,6 +73,7 @@ export function mat(color, opts = {}) {
     m.emissive = new THREE.Color(emissive);
     m.emissiveIntensity = emissiveIntensity;
   }
+  m.userData.deadwireShared = cacheable;
   if (key) _matCache.set(key, m);
   return m;
 }
