@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Deadwire</title>
+  <!-- The game lives at /game/. Send the root there, preserving ?party= invite links.
+       Backup for hosts that don't apply vercel.json redirects. -->
+  <meta http-equiv="refresh" content="0; url=/game/" />
+  <script>location.replace('/game/' + location.search + location.hash);</script>
+  <style>
+    html,body{margin:0;height:100%;background:#14191c;color:#eef3ef;
+      font-family:ui-sans-serif,system-ui,"Segoe UI",sans-serif;
+      display:grid;place-items:center}
+    a{color:#f2a93b;font-weight:800;letter-spacing:.04em;text-decoration:none}
+  </style>
+</head>
+<body>
+  <a href="/game/">ENTER DEADWIRE →</a>
+</body>
+</html>
