@@ -9,7 +9,7 @@ export function showResults(root, results, stash, { onReplay, onMenu }) {
     || '<div class="r-empty">Stash empty</div>';
 
   const verdict = results.extracted
-    ? (results.coreExtracted ? 'CORE SECURED' : 'EXTRACTED')
+    ? (results.coreExtracted ? 'REACTOR CORE SECURED' : 'EXTRACTED')
     : 'WIPED';
   const verdictClass = results.extracted ? (results.coreExtracted ? 'win core' : 'win') : 'loss';
 
@@ -22,7 +22,7 @@ export function showResults(root, results, stash, { onReplay, onMenu }) {
       <div class="r-grid">
         <div class="r-stat"><div class="k">Machines destroyed</div><div class="v">${results.machines}</div></div>
         <div class="r-stat"><div class="k">Runners defeated</div><div class="v">${results.players}</div></div>
-        <div class="r-stat"><div class="k">Core</div><div class="v">${results.coreExtracted ? 'Extracted' : (results.coreLost ? 'Lost' : '—')}</div></div>
+        <div class="r-stat"><div class="k">Reactor core</div><div class="v">${results.coreExtracted ? 'Extracted' : (results.coreLost ? 'Lost' : '—')}</div></div>
         <div class="r-stat"><div class="k">Reputation XP</div><div class="v">+${results.xp}</div></div>
       </div>
       <div class="r-cols">

@@ -35,10 +35,15 @@ function normalizeProfile(profile = {}) {
 }
 
 function normalize(state = {}) {
+  const items = { ...(state.items || {}) };
+  if (items.Core) {
+    items['Reactor Core'] = (items['Reactor Core'] || 0) + items.Core;
+    delete items.Core;
+  }
   return {
     ...EMPTY,
     ...state,
-    items: { ...(state.items || {}) },
+    items,
     profile: normalizeProfile(state.profile),
   };
 }

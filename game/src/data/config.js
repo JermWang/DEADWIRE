@@ -2,7 +2,8 @@
 export const CONFIG = {
   match: {
     durationSec: 480,        // 8 minute match
-    coreSpawnSec: 20,        // core appears (blueprint: ~min 3; short for testing)
+    coreSpawnSec: 180,       // apex reactor core comes online at minute 3
+    reactorCoresPerMatch: 1, // hard cap: the current Core Run has one peak-value cube
     coreDetonateSec: 0,      // 0 = core stays until match end / extracted
     loadoutAmmo: 180,        // ammo you deploy with (later: drawn from your base stash)
   },
@@ -51,6 +52,10 @@ export const CONFIG = {
       kind: 'ranged', health: 55, speed: 0, damage: 8,
       attackRange: 18, attackCooldown: 1.3, aggroRange: 18, contactRadius: 0.7,
       projectileSpeed: 16, projectileLife: 1.6,
+      scanFovDeg: 48,        // visible security sweep; actual acquisition uses this cone
+      scanSpeed: 0.55,       // radians/sec, roughly one full sweep every 11 seconds
+      lockOnSec: 1.1,        // bright target beam before every shot
+      alertGraceSec: 0.8,    // brief memory so cover breaks feel responsive, not twitchy
     },
     hauler: {
       kind: 'tank', health: 160, speed: 1.6, damage: 26,
@@ -71,9 +76,9 @@ export const CONFIG = {
   },
   rewards: {
     extractXP: 120,
-    coreBonusXP: 250,
+    coreBonusXP: 600,
     perMachineXP: 15,
-    corePayout: [{ item: 'Core', min: 1, max: 1 }],
+    corePayout: [{ item: 'Reactor Core', min: 1, max: 1 }],
   },
   camera: {
     // orthographic isometric framing

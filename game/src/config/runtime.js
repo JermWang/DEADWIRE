@@ -22,6 +22,9 @@ export const RUNTIME = {
   deadMint: '',        // $DEAD SPL mint address
   treasury: '',        // treasury wallet pubkey that receives $DEAD payments
   goldPerDead: 1000,   // in-game Gold credited per 1 $DEAD
+
+  // Public social destination shown on the cinematic entry screen.
+  xUrl: '',
 };
 
 // Resolve the websocket base for the match server (handles ws/wss + local dev).

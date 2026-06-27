@@ -1,7 +1,7 @@
 # Deadwire
 
 Low-poly browser PvPvE extraction game. Raid dead reactor zones, fight rogue
-machines, steal the unstable core, and extract with your haul.
+machines, steal the apex reactor core, and extract with your haul.
 
 This repo holds the **Core Run** MVP prototype and the **coded asset pipeline**
 that produces every in-game asset. See `MASTER_BLUEPRINT.md` for full direction.
@@ -29,7 +29,7 @@ npm run server        # ws://127.0.0.1:5181  (dependency-free WebSocket server)
 ```
 
 On the deploy screen pick **DEPLOY ONLINE**. The server is authoritative for the
-match clock, core-spawn timing, who holds the unstable core, and crate ownership;
+match clock, core-spawn timing, who holds the reactor core, and crate ownership;
 players relay position/health/shots and PvP hits. PvE machines are still simulated
 per-client for this slice. If the server is down, the game falls back to solo.
 

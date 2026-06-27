@@ -66,10 +66,10 @@ export const ASSETS = [
   },
   // --- objective / props ---
   {
-    id: 'obj_unstable_core', displayName: 'Unstable Core', category: 'objective',
+    id: 'obj_unstable_core', displayName: 'Reactor Core', category: 'objective',
     pipeline: 'coded', module: 'asset-lib/builders/obj_unstable_core.js',
-    budgets: { maxTriangles: 700, maxMaterials: 4 },
-    tags: ['objective', 'carry', 'glow'],
+    budgets: { maxTriangles: 1100, maxMaterials: 6 }, rarity: 'apex',
+    tags: ['objective', 'carry', 'glow', 'reactor', 'apex'],
     status: 'active',
   },
   {

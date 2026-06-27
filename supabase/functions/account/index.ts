@@ -62,7 +62,7 @@ async function verifyToken(token: string) {
   } catch { return null; }   // malformed token => unauthorized, never a 500
 }
 
-const CUR: Record<string, string> = { Scrap: "SCRAP", Ammo: "AMMO", Components: "COMPONENTS", Parts: "PARTS", Med: "MED", Gold: "GOLD", "Core Shard": "CORE_SHARD", Core: "CORE" };
+const CUR: Record<string, string> = { Scrap: "SCRAP", Ammo: "AMMO", Components: "COMPONENTS", Parts: "PARTS", Med: "MED", Gold: "GOLD", "Core Shard": "CORE_SHARD", Core: "CORE", "Reactor Core": "CORE" };
 
 async function snapshot(p: any) {
   const { data: rows } = await admin.from("stash_items").select("item,qty").eq("profile_id", p.id);

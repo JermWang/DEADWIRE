@@ -26,6 +26,7 @@ function openLobby(loadout, online, name) {
 }
 
 async function deployWithLoading(selectedLoadout, isOnline, playerName) {
+  window.__deadwireReactorAudio?.stop?.();
   const loading = new LoadingScreen(uiRoot, { online: isOnline, name: playerName });
   try {
     await loading.intro();

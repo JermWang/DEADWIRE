@@ -1,8 +1,8 @@
 // RemotePlayer — another runner in the match. Renders the shared char_runner,
-// a floating nameplate, and a carry orb. Position/facing are interpolated toward
+// a floating nameplate, and a carried reactor cube. Position/facing are interpolated toward
 // the latest server snapshot so movement stays smooth between updates.
 import * as THREE from 'three';
-import { buildAsset, mat, mountWeaponToSocket, PALETTE } from '../assets.js';
+import { buildAsset, mountWeaponToSocket } from '../assets.js';
 import { PlayerAnimator } from './PlayerAnimator.js';
 import { disposeObjectTree } from '../render/dispose.js';
 
@@ -28,18 +28,19 @@ export class RemotePlayer {
     mountWeaponToSocket(this.weapon, grip);
     this.mesh.add(nameplate(name));
 
-    this.carryOrb = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(0.18, 1),
-      mat(PALETTE.coreGlow, { emissive: PALETTE.coreGlow, emissiveIntensity: 2.4 }),
-    );
+    this.carryOrb = buildAsset('obj_unstable_core', { variant: 'carry' });
+    this.carryOrb.scale.setScalar(0.46);
+    this.carryOrb.rotation.set(0.2, 0.25, -0.1);
+    this.carryOrb.position.set(0, 0, 0.1);
     this.carryOrb.visible = false;
-    (this.mesh.getObjectByName('backpack') || this.mesh).add(this.carryOrb);
+    (this.mesh.getObjectByName('hand_l') || this.mesh.getObjectByName('backpack') || this.mesh).add(this.carryOrb);
 
     this.target = new THREE.Vector3();
     this.targetFacing = 0;
     this.hp = 100;
     this.carrying = false;
     this.radius = 0.34;
+    this._carryTime = 0;
     this.anim = new PlayerAnimator(this);
   }
 
@@ -61,6 +62,19 @@ export class RemotePlayer {
     while (d < -Math.PI) d += Math.PI * 2;
     this.mesh.rotation.y += d * Math.min(1, dt * 12);
     this.carryOrb.visible = this.carrying;
+    if (this.carrying) {
+      this._carryTime += dt;
+      const assembly = this.carryOrb.userData.coreAssembly;
+      if (assembly) assembly.rotation.y += dt * 0.85;
+      const pulse = Math.sin(this._carryTime * 6);
+      const materials = new Set(
+        (this.carryOrb.userData.glowParts || []).map((part) => part.material).filter(Boolean),
+      );
+      materials.forEach((material) => {
+        const hot = material === this.carryOrb.userData.glow?.material;
+        material.emissiveIntensity = (hot ? 4.8 : 2.4) + pulse * (hot ? 1.1 : 0.5);
+      });
+    }
     this.anim.update(dt, {
       alive: this.hp > 0, moving, running: false, speedRatio: 1,
       grounded: true, verticalVelocity: 0, rolling: false, aiming: false,

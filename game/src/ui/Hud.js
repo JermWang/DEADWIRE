@@ -9,7 +9,7 @@ export class Hud {
     this.el.innerHTML = `
       <div class="hud-top">
         <div class="timer" id="hudTimer">8:00</div>
-        <div class="objective" id="hudObjective">Locate the unstable core</div>
+        <div class="objective" id="hudObjective">Survive until the reactor core surfaces</div>
       </div>
       <div class="hud-banner" id="hudBanner"></div>
       <div class="hud-bottom">
@@ -70,8 +70,8 @@ export class Hud {
   }
   setCore(state) {
     const el = this.$('hudCore');
-    if (state === 'carrying') { el.textContent = '◈ CARRYING CORE — you are exposed'; el.className = 'core-tag on'; }
-    else if (state === 'dropped') { el.textContent = '◈ Core dropped'; el.className = 'core-tag drop'; }
+    if (state === 'carrying') { el.textContent = '◈ REACTOR CORE — you are exposed'; el.className = 'core-tag on'; }
+    else if (state === 'dropped') { el.textContent = '◈ Reactor core dropped'; el.className = 'core-tag drop'; }
     else el.className = 'core-tag';
   }
   setMovement(state, rollCooldown = 0) {

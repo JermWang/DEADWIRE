@@ -126,15 +126,19 @@ export class Lobby {
             <b>BREAKER YARD</b>
             <small>4 RUNNERS · PvPvE · 8 MIN</small>
           </div>
-          <button class="mode-select" data-act="mode">
-            <span id="modeName">${this.online ? 'SQUADS · ONLINE' : 'SOLO · PRIVATE'}</span>
-            <b>CHANGE</b>
-          </button>
+          <div class="mode-choices" aria-label="Game mode">
+            <button data-act="setSolo" class="${this.online ? '' : 'on'}">
+              <span>SOLO</span><b>PRIVATE RUN</b>
+            </button>
+            <button data-act="setOnline" class="${this.online ? 'on' : ''}">
+              <span>MULTIPLAYER</span><b>ONLINE PARTY</b>
+            </button>
+          </div>
         </section>
         <section class="mission-card glass">
           <div class="panel-kicker">FIELD DIRECTIVES</div>
           <div class="directive"><span>Extract successfully</span><b>${Math.min(stash.extractions, 3)} / 3</b></div>
-          <div class="directive"><span>Secure unstable cores</span><b>${stash.items?.Core || 0} / 2</b></div>
+          <div class="directive"><span>Extract a reactor core</span><b>${Math.min(stash.items?.['Reactor Core'] || 0, 1)} / 1</b></div>
           <div class="directive"><span>Recover machine parts</span><b>${Math.min(stash.items?.Parts || 0, 12)} / 12</b></div>
         </section>
         <button class="ready-btn" id="readyBtn" data-act="ready"></button>
@@ -199,8 +203,10 @@ export class Lobby {
       this._renderParty();
       return;
     }
-    if (action === 'mode') {
-      this.online = !this.online;
+    if (action === 'setSolo' || action === 'setOnline') {
+      const nextOnline = action === 'setOnline';
+      if (nextOnline === this.online) return;
+      this.online = nextOnline;
       this.localReady = false;
       if (this.online) this.party.connect(this.partyCode, this.name);
       else {
@@ -247,7 +253,8 @@ export class Lobby {
   _renderParty() {
     this.el.querySelector('#partyCode').textContent = this.partyCode;
     this.el.querySelector('#partyStatus').textContent = this.partyStatus;
-    this.el.querySelector('#modeName').textContent = this.online ? 'SQUADS · ONLINE' : 'SOLO · PRIVATE';
+    this.el.querySelector('[data-act="setSolo"]')?.classList.toggle('on', !this.online);
+    this.el.querySelector('[data-act="setOnline"]')?.classList.toggle('on', this.online);
 
     const roster = this.el.querySelector('#partyRoster');
     roster.innerHTML = '';
@@ -262,12 +269,9 @@ export class Lobby {
     }
 
     const labels = this.el.querySelector('#stageLabels');
-    labels.innerHTML = Array.from({ length: MAX_PARTY }, (_, index) => {
-      const member = this.members[index];
-      return member
-        ? `<div data-slot="${index}" class="${member.ready ? 'ready' : ''}"><b>${member.name}</b><span>${member.ready ? 'READY' : member.leader ? 'LEADER' : 'NOT READY'}</span></div>`
-        : `<div data-slot="${index}" class="empty"><b>OPEN SLOT</b><span>INVITE</span></div>`;
-    }).join('');
+    labels.innerHTML = this.members.map((member, index) =>
+      `<div data-slot="${index}" class="${member.ready ? 'ready' : ''}"><b>${member.name}</b><span>${member.ready ? 'READY' : member.leader ? 'LEADER' : 'NOT READY'}</span></div>`
+    ).join('');
 
     this._rebuildModels();
     this._renderReady();
@@ -320,17 +324,9 @@ export class Lobby {
 
     this.partyRoot = new THREE.Group();
     this.scene.add(this.partyRoot);
-    const slots = [
-      { x: -1.12, z: 0.38, scale: 1.04 },
-      { x: 1.12, z: 0.38, scale: 1.02 },
-      { x: -2.32, z: -1.18, scale: 0.94 },
-      { x: 2.32, z: -1.18, scale: 0.94 },
-    ];
     for (let i = 0; i < MAX_PARTY; i++) {
-      const layout = slots[i];
       const platform = new THREE.Group();
-      platform.position.set(layout.x, -0.05, layout.z);
-      platform.scale.setScalar(layout.scale);
+      platform.position.set(0, -0.05, 0);
       const base = new THREE.Mesh(
         new THREE.CylinderGeometry(0.56, 0.7, 0.24, 8),
         mat(PALETTE.steelDark, { metal: 0.42, rough: 0.52 }),
@@ -349,6 +345,7 @@ export class Lobby {
       platform.userData.model = model;
       platform.userData.ring = ring;
       platform.userData.baseY = platform.position.y;
+      platform.visible = false;
       this.partyRoot.add(platform);
       this.platforms.push(platform);
     }
@@ -380,6 +377,7 @@ export class Lobby {
     if (!labelRect.width || !labelRect.height) return;
     this._labelWorld = this._labelWorld || new THREE.Vector3();
     this.platforms.forEach((platform, index) => {
+      if (!platform.visible) return;
       const label = labels.querySelector(`[data-slot="${index}"]`);
       if (!label) return;
       this._labelWorld.set(0, 0.22, 0);
@@ -394,21 +392,30 @@ export class Lobby {
   _rebuildModels() {
     if (!this.platforms.length) return;
     const tints = ['#2f78b7', '#7c4353', '#3f7658', '#8a6a38'];
+    const layouts = {
+      1: [{ x: 0, z: 0.2, scale: 1.08 }],
+      2: [{ x: -1.12, z: 0.24, scale: 1.04 }, { x: 1.12, z: 0.24, scale: 1.04 }],
+      3: [{ x: -1.85, z: -0.3, scale: 0.96 }, { x: 0, z: 0.4, scale: 1.05 }, { x: 1.85, z: -0.3, scale: 0.96 }],
+      4: [
+        { x: -1.12, z: 0.38, scale: 1.04 },
+        { x: 1.12, z: 0.38, scale: 1.02 },
+        { x: -2.32, z: -1.18, scale: 0.94 },
+        { x: 2.32, z: -1.18, scale: 0.94 },
+      ],
+    };
+    const activeLayouts = layouts[Math.max(1, Math.min(MAX_PARTY, this.members.length))];
     for (let i = 0; i < this.platforms.length; i++) {
       const slot = this.platforms[i].userData.model;
       disposeObjectTree(slot);
       slot.clear();
       const member = this.members[i];
+      this.platforms[i].visible = Boolean(member);
+      if (!member) continue;
+      const layout = activeLayouts[i];
+      this.platforms[i].position.set(layout.x, -0.05, layout.z);
+      this.platforms[i].scale.setScalar(layout.scale);
+      this.platforms[i].userData.baseY = -0.05;
       this.platforms[i].userData.ring.material.emissiveIntensity = member?.ready ? 3.4 : member ? 1.7 : 0.7;
-      if (!member) {
-        const plus = new THREE.Mesh(
-          new THREE.OctahedronGeometry(0.22, 0),
-          mat(PALETTE.accentCyan, { emissive: PALETTE.accentCyan, emissiveIntensity: 1.2, transparent: true, opacity: 0.38 }),
-        );
-        plus.position.y = 0.85;
-        slot.add(plus);
-        continue;
-      }
       const localColors = i === 0 ? this.loadout._colors : null;
       const runner = buildAsset('char_runner', { pose: 'aim', colors: { jacket: localColors?.jacket || tints[i] } });
       const hand = runner.getObjectByName(runner.userData.weaponSocketName || 'hand_r') || runner;

@@ -25,7 +25,7 @@ import { ObjectiveIndicator } from '../render/ObjectiveIndicator.js';
 import { makeSky } from '../render/Sky.js';
 import { disposeObjectTree } from '../render/dispose.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { mat, PALETTE } from '../assets.js';
+import { buildAsset, mat, PALETTE } from '../assets.js';
 
 export class Game {
   constructor(canvas, uiRoot) {
@@ -104,14 +104,15 @@ export class Game {
     this.scene.add(this.player.mesh);
     this.rig.snap(this.player.position);
 
-    // carry indicator (glowing orb shown over the player while carrying core)
-    this.carryOrb = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(0.18, 1),
-      mat(PALETTE.coreGlow, { emissive: PALETTE.coreGlow, emissiveIntensity: 2.4 })
-    );
+    // The extracted object remains visually legible in the runner's off hand.
+    this.carryOrb = buildAsset('obj_unstable_core', { variant: 'carry' });
+    this.carryOrb.scale.setScalar(0.46);
+    this.carryOrb.rotation.set(0.2, 0.25, -0.1);
+    this.carryOrb.position.set(0, 0, 0.1);
     this.carryOrb.visible = false;
-    const back = this.player.mesh.getObjectByName('backpack');
-    (back || this.player.mesh).add(this.carryOrb);
+    const carrySocket = this.player.mesh.getObjectByName('hand_l')
+      || this.player.mesh.getObjectByName('backpack');
+    (carrySocket || this.player.mesh).add(this.carryOrb);
 
     // entities
     this.enemies = [];
@@ -137,7 +138,7 @@ export class Game {
     // Constant-screen-size, camera-facing objective beacons shared by all teams.
     this.objectiveIndicators = [];
     this.coreIndicator = new ObjectiveIndicator({
-      label: 'UNSTABLE CORE', icon: '◆', color: PALETTE.coreGlow, height: 3.1,
+      label: 'REACTOR CORE', icon: '◆', color: PALETTE.signalViolet, height: 3.1,
     });
     this.coreIndicator.setVisible(false);
     this.scene.add(this.coreIndicator.root);
@@ -236,15 +237,15 @@ export class Game {
     if (c && !c.opened) { c.open(); } // mark opened + visual; no loot for the observer
   }
 
-  _spawnCore() { this.coreSpawned = true; this.core.spawn(); this.hud.siren(); this.rig.addShake(0.6); this.hud.banner('⚠ UNSTABLE CORE ONLINE', 2600); this.hud.setObjective('Secure the core and extract'); }
+  _spawnCore() { this.coreSpawned = true; this.core.spawn(); this.hud.siren(); this.rig.addShake(0.6); this.hud.banner('⚠ REACTOR CORE ONLINE', 2600); this.hud.setObjective('Secure the reactor core and extract'); }
 
   _onCoreState(m) {
     // authoritative core ownership from the server
     if (m.carrierId === this.localId) {
       // granted to me
       this.core.pickUp(this.player); this.carryOrb.visible = true;
-      this.hud.setCore('carrying'); this.hud.banner('CORE SECURED — extract it', 2400);
-      this.hud.setObjective('Extract with the core (south road)');
+      this.hud.setCore('carrying'); this.hud.banner('REACTOR CORE SECURED — extract it', 2400);
+      this.hud.setObjective('Extract the reactor core (south road)');
     } else if (m.carrierId) {
       // a remote holds it
       if (this.player.carryingCore) { this.player.carryingCore = false; this.carryOrb.visible = false; this.hud.setCore(''); }
@@ -522,7 +523,7 @@ export class Game {
       for (const e of this.extracts) { const d = this.player.position.distanceTo(e.position); if (d < bd) { bd = d; best = e; } }
       if (best) markers.push({ key: 'extract', pos: new THREE.Vector3(best.position.x, 1, best.position.z), label: 'EXTRACT', color: '#9bff5a', edgeOnly: true });
     } else if (this.core.spawned && !this.core.carrier) {
-      markers.push({ key: 'core', pos: new THREE.Vector3(this.core.position.x, 1.2, this.core.position.z), label: 'CORE', color: '#54f7c8', edgeOnly: true });
+      markers.push({ key: 'core', pos: new THREE.Vector3(this.core.position.x, 1.2, this.core.position.z), label: 'REACTOR CORE', color: '#9c76ff', edgeOnly: true });
     }
     this.hud.setMarkers(markers, this.renderer);
   }
@@ -706,7 +707,7 @@ export class Game {
     if (this.core.spawned && !this.core.carrier && !this.player.carryingCore) {
       const d = pos.distanceTo(this.core.position);
       if (d < this.core.interactRange) {
-        prompt = '[E] Take unstable core';
+        prompt = '[E] Take reactor core';
         if (this.input.pressed('e')) {
           if (this.online) {
             this.net.send({ t: 'core_pickup' });
@@ -715,8 +716,8 @@ export class Game {
             this.core.pickUp(this.player);
             this.carryOrb.visible = true;
             this.hud.setCore('carrying');
-            this.hud.banner('CORE SECURED — extract before they find you', 2600);
-            this.hud.setObjective('Extract with the core (south road)');
+            this.hud.banner('REACTOR CORE SECURED — extract before they find you', 2600);
+            this.hud.setObjective('Extract the reactor core (south road)');
           }
         }
       }
@@ -741,8 +742,17 @@ export class Game {
 
   _updateCoreCarry(dt) {
     if (!this.player.carryingCore) { this.pingRing.visible = false; return; }
-    // pulse the carry orb
-    this.carryOrb.material.emissiveIntensity = 2.0 + Math.sin(this.t * 6) * 0.8;
+    // Pulse and counter-rotate the hand-carried reactor cube.
+    const pulse = Math.sin(this.t * 6);
+    const glowMaterials = new Set(
+      (this.carryOrb.userData.glowParts || []).map((part) => part.material).filter(Boolean),
+    );
+    glowMaterials.forEach((material) => {
+      const hot = material === this.carryOrb.userData.glow?.material;
+      material.emissiveIntensity = (hot ? 4.8 : 2.4) + pulse * (hot ? 1.1 : 0.5);
+    });
+    const carriedAssembly = this.carryOrb.userData.coreAssembly;
+    if (carriedAssembly) carriedAssembly.rotation.y += dt * 0.85;
 
     // periodic position reveal ping
     this.pingTimer -= dt;
@@ -814,7 +824,7 @@ export class Game {
     if (extracted) {
       xp += CONFIG.rewards.extractXP;
       for (const [item, qty] of Object.entries(this.run.loot)) loot.push({ item, qty });
-      if (this.run.coreExtracted) { xp += CONFIG.rewards.coreBonusXP; loot.push({ item: 'Core', qty: 1 }); }
+      if (this.run.coreExtracted) { xp += CONFIG.rewards.coreBonusXP; loot.push({ item: 'Reactor Core', qty: 1 }); }
     }
     xp += this.run.machines * CONFIG.rewards.perMachineXP;
 
