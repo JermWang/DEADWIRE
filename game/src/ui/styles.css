@@ -213,6 +213,19 @@ html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden;
   letter-spacing: 0.08em; border-bottom: 1px solid #1b2227; padding: 7px 0; }
 .ms-row b { color: var(--text); }
 .menu-foot { margin-top: 16px; font-size: 11px; color: var(--muted); }
+.wallet-status { margin-top: 10px; font-size: 11px; color: var(--muted); letter-spacing: 0.04em; }
+.menu-board { margin-top: 16px; }
+.mb-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px;
+  letter-spacing: 0.18em; color: var(--cyan); margin-bottom: 8px; }
+.mb-war { color: var(--amber); letter-spacing: 0.04em; font-size: 10px; }
+.mb-rows { display: flex; flex-direction: column; gap: 3px; }
+.mb-row { display: grid; grid-template-columns: 18px 1fr auto auto; gap: 10px; align-items: center;
+  font-size: 12px; color: var(--text); padding: 4px 0; border-bottom: 1px solid #1b2227; }
+.mb-rank { color: var(--muted); }
+.mb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mb-lv { color: var(--cyan); font-size: 11px; }
+.mb-ex { color: var(--muted); font-size: 11px; }
+.mb-empty { font-size: 11px; color: var(--muted); }
 .menu-hero { position: relative; min-width: 0; pointer-events: none; }
 #heroCanvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; cursor: grab; z-index: -1; }
 #heroCanvas:active { cursor: grabbing; }

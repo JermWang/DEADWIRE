@@ -49,6 +49,10 @@ export class MainMenu {
             <div class="ms-row"><span>RUNS</span><b id="msRuns">${stash.runs}</b></div>
             <div class="ms-row"><span>EXTRACTIONS</span><b id="msExtractions">${stash.extractions}</b></div>
           </div>
+          <div class="menu-board">
+            <div class="mb-head"><span>TOP RUNNERS</span><span id="warMap" class="mb-war">—</span></div>
+            <div id="leaderboardRows" class="mb-rows"><div class="mb-empty">loading…</div></div>
+          </div>
           <div class="menu-foot">WASD move · Shift sprint · Space jump · Q roll · RMB aim · LMB fire · E interact · M map debug</div>
         </div>
 
@@ -114,6 +118,33 @@ export class MainMenu {
     });
 
     this._initHero();
+    this._loadOnlineBoards();
+  }
+
+  _esc(s) { return String(s).replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c])); }
+
+  // Public reads from Supabase (anon, RLS-allowed): leaderboard + sector control.
+  async _loadOnlineBoards() {
+    const rows = this.el?.querySelector('#leaderboardRows');
+    const war = this.el?.querySelector('#warMap');
+    try {
+      const { leaderboard, warMap } = await import('../net/supabase.js');
+      const [board, sectors] = await Promise.all([leaderboard(5), warMap().catch(() => [])]);
+      if (rows) {
+        rows.innerHTML = board.length
+          ? board.map((r, i) => {
+              const name = this._esc(r.handle || (r.wallet ? `${r.wallet.slice(0, 4)}…` : 'Runner'));
+              return `<div class="mb-row"><span class="mb-rank">${i + 1}</span><span class="mb-name">${name}</span><span class="mb-lv">Lv ${r.level}</span><span class="mb-ex">${r.extractions} ext</span></div>`;
+            }).join('')
+          : '<div class="mb-empty">No runners yet — be the first to extract.</div>';
+      }
+      if (war) {
+        const held = sectors.filter((s) => s.owner_profile_id).length;
+        war.textContent = sectors.length ? `${held}/${sectors.length} districts held` : '';
+      }
+    } catch {
+      if (rows) rows.innerHTML = '<div class="mb-empty">leaderboard offline</div>';
+    }
   }
 
   _short(addr) { return `${addr.slice(0, 4)}…${addr.slice(-4)}`; }
