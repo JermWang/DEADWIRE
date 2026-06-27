@@ -1,0 +1,87 @@
+{
+  "updated": "2026-06-26",
+  "decision": "Use a two-stage AI asset lane: style-consistent PNG concepts first, then image-to-3D reconstruction or generation, followed by Blender cleanup and GLB QA.",
+  "imageGeneration": [
+    {
+      "name": "FLUX.1-schnell",
+      "provider": "Black Forest Labs / Hugging Face",
+      "role": "Default fast concept generation candidate for permissive ideation.",
+      "licenseSignal": "apache-2.0 from Hugging Face API metadata",
+      "url": "https://huggingface.co/black-forest-labs/FLUX.1-schnell",
+      "notes": "Use for concepts and style exploration. Keep exact prompt, seed, and model revision."
+    },
+    {
+      "name": "Stable Diffusion XL Base 1.0",
+      "provider": "Stability AI / Hugging Face",
+      "role": "Alternate concept generation and LoRA ecosystem candidate.",
+      "licenseSignal": "openrail++ from Hugging Face API metadata",
+      "url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0",
+      "notes": "Useful if we want a broader LoRA tooling ecosystem."
+    }
+  ],
+  "styleConsistency": [
+    {
+      "name": "ComfyUI",
+      "role": "Local workflow runner for model graphs, LoRAs, ControlNet-style conditioning, upscaling, and repeatable image generation.",
+      "url": "https://github.com/comfyanonymous/ComfyUI",
+      "notes": "Use saved workflows as production recipes. Do not rely on one-off prompt memory."
+    }
+  ],
+  "backgroundRemoval": [
+    {
+      "name": "RMBG-2.0",
+      "provider": "BRIA AI / Hugging Face",
+      "role": "Background removal and cutout preparation candidate.",
+      "licenseSignal": "other from Hugging Face API metadata",
+      "url": "https://huggingface.co/briaai/RMBG-2.0",
+      "notes": "Treat as review-required before commercial use."
+    }
+  ],
+  "imageTo3D": [
+    {
+      "name": "Hunyuan3D 2.1",
+      "provider": "Tencent / Hugging Face",
+      "role": "Highest-fidelity image-to-3D production candidate.",
+      "licenseSignal": "other from Hugging Face API metadata; Tencent Hunyuan 3D 2.1 Community License Agreement",
+      "url": "https://huggingface.co/tencent/Hunyuan3D-2.1",
+      "notes": "Strong technical candidate. License includes territory limitations and requires review before commercial production."
+    },
+    {
+      "name": "Stable Fast 3D",
+      "provider": "Stability AI / Hugging Face",
+      "role": "Fast image-to-3D prototype lane.",
+      "licenseSignal": "other from Hugging Face API metadata",
+      "url": "https://huggingface.co/stabilityai/stable-fast-3d",
+      "notes": "Useful for quick mesh drafts. Review license/terms before production."
+    },
+    {
+      "name": "TripoSR",
+      "provider": "Stability AI / Hugging Face",
+      "role": "Permissive fallback for image-to-3D experiments.",
+      "licenseSignal": "mit from Hugging Face API metadata",
+      "url": "https://huggingface.co/stabilityai/TripoSR",
+      "notes": "Often less polished, but excellent as a fallback and for tooling tests."
+    }
+  ],
+  "cleanupAndOptimization": [
+    {
+      "name": "Blender",
+      "role": "Scale, origin, retopology, rigging, UV cleanup, material cleanup, and GLB export.",
+      "url": "https://www.blender.org/"
+    },
+    {
+      "name": "glTF-Transform",
+      "role": "GLB inspection, optimization, texture conversion hooks, mesh compression, and repeatable CLI transforms.",
+      "url": "https://gltf-transform.dev/"
+    }
+  ],
+  "runtime": [
+    {
+      "name": "Three.js",
+      "role": "Browser-native rendering layer for Solana games.",
+      "url": "https://threejs.org/",
+      "notes": "Kintara publicly exposes Three.js 0.160.0; we can pin runtime versions per project."
+    }
+  ]
+}
+

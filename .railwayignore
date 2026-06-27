@@ -1,0 +1,10 @@
+# Railway only runs the match server (node server/match-server.mjs), which needs
+# server/ + game/src/data/config.js. Skip everything heavy/irrelevant to the upload.
+node_modules/
+*.log
+.git/
+.claude/
+.agents/
+game-asset-pipeline/
+tools/
+*.md

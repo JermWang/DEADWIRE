@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.codex/web3-game-asset-manifest.schema.json",
+  "title": "Web3 Game Asset Manifest",
+  "type": "object",
+  "required": ["schemaVersion", "project", "stylePack", "assets"],
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "project": { "type": "string" },
+    "stylePack": {
+      "type": "object",
+      "required": ["id", "name", "camera", "materialLanguage", "palette"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "camera": { "type": "string" },
+        "materialLanguage": { "type": "string" },
+        "palette": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "displayName",
+          "category",
+          "version",
+          "status",
+          "files",
+          "source",
+          "transform",
+          "budgets",
+          "license"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "displayName": { "type": "string" },
+          "category": { "type": "string" },
+          "version": { "type": "string" },
+          "status": { "type": "string" },
+          "files": {
+            "type": "object",
+            "required": ["concept", "modelGLB", "icon", "thumbnail"],
+            "properties": {
+              "concept": { "type": "string" },
+              "modelGLB": { "type": "string" },
+              "icon": { "type": "string" },
+              "thumbnail": { "type": "string" }
+            }
+          },
+          "source": {
+            "type": "object",
+            "required": ["conceptModel", "imageTo3DModel", "prompt", "negativePrompt", "seed"],
+            "properties": {
+              "conceptModel": { "type": "string" },
+              "imageTo3DModel": { "type": "string" },
+              "prompt": { "type": "string" },
+              "negativePrompt": { "type": "string" },
+              "seed": { "type": "string" }
+            }
+          },
+          "transform": {
+            "type": "object",
+            "required": ["scale", "origin", "collisionFootprint", "attachPoints", "animationClips"],
+            "properties": {
+              "scale": { "type": "number" },
+              "origin": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": { "type": "number" }
+              },
+              "collisionFootprint": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": { "type": "number" }
+                }
+              },
+              "attachPoints": { "type": "object" },
+              "animationClips": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            }
+          },
+          "budgets": {
+            "type": "object",
+            "required": ["maxTriangles", "maxMaterials", "maxTextureSize", "maxFileSizeKB"],
+            "properties": {
+              "maxTriangles": { "type": "number" },
+              "maxMaterials": { "type": "number" },
+              "maxTextureSize": { "type": "number" },
+              "maxFileSizeKB": { "type": "number" }
+            }
+          },
+          "license": {
+            "type": "object",
+            "required": ["concept", "model", "notes"],
+            "properties": {
+              "concept": { "type": "string" },
+              "model": { "type": "string" },
+              "notes": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+

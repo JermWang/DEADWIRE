@@ -1,0 +1,160 @@
+{
+  "schemaVersion": "1.0.0",
+  "project": "shared-solana-browser-game-assets",
+  "stylePack": {
+    "id": "arcane-toybox-v0",
+    "name": "Arcane Toybox",
+    "camera": "orthographic-isometric",
+    "materialLanguage": "clean low-poly forms, readable silhouettes, saturated accent gems, soft rough materials",
+    "palette": [
+      "#24313f",
+      "#f2d38b",
+      "#63d2ff",
+      "#9b6dff",
+      "#f26d6d",
+      "#f4f7ef"
+    ]
+  },
+  "assets": [
+    {
+      "id": "pet_crystal_shardling",
+      "displayName": "Crystal Shardling",
+      "category": "pet",
+      "version": "0.1.0",
+      "status": "pipeline-smoke-test",
+      "files": {
+        "concept": "assets/pet_crystal_shardling/source/concept.svg",
+        "modelGLB": "assets/pet_crystal_shardling/model/pet_crystal_shardling.glb",
+        "icon": "assets/pet_crystal_shardling/icon.svg",
+        "thumbnail": "assets/pet_crystal_shardling/thumbnail.svg"
+      },
+      "source": {
+        "conceptModel": "sample-vector-placeholder",
+        "imageTo3DModel": "sample-node-glb-generator",
+        "prompt": "tiny floating crystal pet, faceted blue-violet body, gold core, friendly game mascot silhouette, orthographic isometric browser game asset, clean low-poly style",
+        "negativePrompt": "photorealistic, noisy texture, unreadable silhouette, horror, gore, text, watermark",
+        "seed": "manual-smoke-test-001"
+      },
+      "transform": {
+        "scale": 1,
+        "origin": [
+          0,
+          0,
+          0
+        ],
+        "collisionFootprint": [
+          [
+            0,
+            0
+          ]
+        ],
+        "attachPoints": {
+          "pet_anchor": [
+            0,
+            0.15,
+            0
+          ],
+          "fx_core": [
+            0,
+            0.38,
+            0
+          ]
+        },
+        "animationClips": [
+          "idle_bob"
+        ]
+      },
+      "budgets": {
+        "maxTriangles": 500,
+        "maxMaterials": 2,
+        "maxTextureSize": 512,
+        "maxFileSizeKB": 128
+      },
+      "web3": {
+        "mintGroup": "sample-pets",
+        "rarity": "common",
+        "chain": "solana-devnet-placeholder"
+      },
+      "license": {
+        "concept": "internal sample placeholder",
+        "model": "internal sample placeholder",
+        "notes": "Replace with exact generation model, LoRA, image-to-3D model, and commercial usage terms before production."
+      }
+    },
+    {
+      "id": "npc_ps1_cop",
+      "displayName": "PS1 Cop",
+      "category": "npc",
+      "version": "0.1.0",
+      "status": "coded-parametric-active",
+      "files": {
+        "concept": "assets/npc_ps1_cop/source/concept-ai-tpose.png",
+        "modelGLB": "assets/npc_ps1_cop/model/npc_ps1_cop.glb",
+        "icon": "assets/npc_ps1_cop/icon.svg",
+        "thumbnail": "assets/npc_ps1_cop/thumbnail.svg"
+      },
+      "source": {
+        "conceptModel": "built-in image_gen",
+        "imageTo3DModel": "coded-parametric-generator",
+        "prompt": "PS1-inspired low-poly police officer character, strict T-pose, full body centered, arms extended horizontally, hands and feet visible, neutral rigging-friendly stance, clean isolated background, low-poly console-era style.",
+        "negativePrompt": "photorealistic, modern tactical realism, gore, text, watermark, tiny details, high-poly",
+        "seed": "imagegen-019f05d1-tpose-cop"
+      },
+      "transform": {
+        "scale": 1,
+        "origin": [
+          0,
+          0,
+          0
+        ],
+        "collisionFootprint": [
+          [
+            0,
+            0
+          ]
+        ],
+        "attachPoints": {
+          "head": [
+            0,
+            1.82,
+            0
+          ],
+          "hand_l": [
+            -0.44,
+            0.78,
+            0.02
+          ],
+          "hand_r": [
+            0.44,
+            0.78,
+            0.02
+          ],
+          "fx_badge": [
+            -0.15,
+            1.34,
+            -0.2
+          ]
+        },
+        "animationClips": [
+          "idle_bob"
+        ]
+      },
+      "budgets": {
+        "maxTriangles": 1000,
+        "maxMaterials": 8,
+        "maxTextureSize": 512,
+        "maxFileSizeKB": 256
+      },
+      "web3": {
+        "mintGroup": "sample-npcs",
+        "rarity": "common",
+        "chain": "solana-devnet-placeholder"
+      },
+      "license": {
+        "concept": "generated with built-in image_gen for pipeline testing",
+        "model": "internal procedural coded asset",
+        "notes": "Active model uses coded/parametric GLB for topology, rigging control, and browser-game performance. AI image-to-3D outputs are archived under assets/npc_ps1_cop/model-ai for comparison only."
+      }
+    }
+  ]
+}

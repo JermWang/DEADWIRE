@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Asset Pipeline Preview</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #111416;
+        --panel: #191f23;
+        --line: #303a40;
+        --text: #f4f7ef;
+        --muted: #9aa7ad;
+        --gold: #f2d38b;
+        --cyan: #63d2ff;
+        --red: #f26d6d;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      aside {
+        border-right: 1px solid var(--line);
+        background: var(--panel);
+        padding: 18px;
+        overflow: auto;
+      }
+
+      h1 {
+        margin: 0 0 16px;
+        font-size: 18px;
+        letter-spacing: 0;
+      }
+
+      .asset-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      button.asset {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 56px 1fr;
+        gap: 12px;
+        align-items: center;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--text);
+        background: #12171a;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      button.asset[aria-selected="true"] {
+        border-color: var(--cyan);
+        box-shadow: 0 0 0 1px rgba(99, 210, 255, 0.35);
+      }
+
+      button.asset img {
+        width: 56px;
+        height: 56px;
+        border-radius: 8px;
+        object-fit: cover;
+        background: #0d1113;
+      }
+
+      .name {
+        font-weight: 800;
+      }
+
+      .meta {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      main {
+        min-width: 0;
+        display: grid;
+        grid-template-rows: 1fr auto;
+      }
+
+      #viewport {
+        position: relative;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .status {
+        position: absolute;
+        left: 16px;
+        top: 16px;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(17, 20, 22, 0.82);
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      footer {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1px;
+        border-top: 1px solid var(--line);
+        background: var(--line);
+      }
+
+      .stat {
+        padding: 12px 14px;
+        background: var(--panel);
+      }
+
+      .label {
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .value {
+        margin-top: 4px;
+        font-weight: 800;
+      }
+
+      @media (max-width: 820px) {
+        body {
+          grid-template-columns: 1fr;
+          grid-template-rows: auto 1fr;
+        }
+
+        aside {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .asset-list {
+          grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        }
+
+        footer {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <aside>
+      <h1>Asset Preview</h1>
+      <div id="assetList" class="asset-list"></div>
+    </aside>
+    <main>
+      <section id="viewport">
+        <div id="status" class="status">Loading manifest</div>
+      </section>
+      <footer>
+        <div class="stat">
+          <div class="label">Asset</div>
+          <div id="assetName" class="value">-</div>
+        </div>
+        <div class="stat">
+          <div class="label">Category</div>
+          <div id="assetCategory" class="value">-</div>
+        </div>
+        <div class="stat">
+          <div class="label">Budget</div>
+          <div id="assetBudget" class="value">-</div>
+        </div>
+        <div class="stat">
+          <div class="label">Status</div>
+          <div id="assetStatus" class="value">-</div>
+        </div>
+      </footer>
+    </main>
+    <script type="module">
+      import * as THREE from 'three';
+      import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+      const viewport = document.getElementById('viewport');
+      const statusEl = document.getElementById('status');
+      const assetListEl = document.getElementById('assetList');
+      const assetNameEl = document.getElementById('assetName');
+      const assetCategoryEl = document.getElementById('assetCategory');
+      const assetBudgetEl = document.getElementById('assetBudget');
+      const assetStatusEl = document.getElementById('assetStatus');
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x111416);
+
+      const camera = new THREE.OrthographicCamera(-2.2, 2.2, 2.2, -2.2, 0.1, 100);
+      camera.position.set(3, 2.7, 3);
+      camera.lookAt(0, 0.15, 0);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      viewport.appendChild(renderer.domElement);
+
+      const hemi = new THREE.HemisphereLight(0xffffff, 0x26313a, 2.6);
+      scene.add(hemi);
+      const key = new THREE.DirectionalLight(0xffffff, 2.2);
+      key.position.set(3, 4, 2);
+      scene.add(key);
+
+      const grid = new THREE.GridHelper(4, 8, 0x44515a, 0x283139);
+      grid.position.y = -0.58;
+      scene.add(grid);
+
+      const loader = new GLTFLoader();
+      let active = null;
+      let activeAsset = null;
+
+      function resize() {
+        const width = viewport.clientWidth;
+        const height = viewport.clientHeight;
+        renderer.setSize(width, height, false);
+        const aspect = width / Math.max(1, height);
+        const size = 2.2;
+        camera.left = -size * aspect;
+        camera.right = size * aspect;
+        camera.top = size;
+        camera.bottom = -size;
+        camera.updateProjectionMatrix();
+      }
+
+      function setStatus(text) {
+        statusEl.textContent = text;
+      }
+
+      function setStats(asset) {
+        assetNameEl.textContent = asset.displayName;
+        assetCategoryEl.textContent = asset.category;
+        assetBudgetEl.textContent = `${asset.budgets.maxTriangles} tris / ${asset.budgets.maxFileSizeKB} KB`;
+        assetStatusEl.textContent = asset.status;
+      }
+
+      async function loadAsset(asset) {
+        activeAsset = asset;
+        setStats(asset);
+        setStatus(`Loading ${asset.displayName}`);
+        if (active) {
+          scene.remove(active);
+          active.traverse((node) => {
+            if (node.isMesh) node.geometry?.dispose?.();
+          });
+        }
+        const gltf = await loader.loadAsync(`../${asset.files.modelGLB}`);
+        active = gltf.scene;
+        active.scale.setScalar(asset.transform.scale || 1);
+        active.position.set(0, 0, 0);
+        scene.add(active);
+        setStatus(`${asset.displayName} loaded`);
+      }
+
+      function renderList(manifest) {
+        assetListEl.replaceChildren();
+        for (const asset of manifest.assets) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'asset';
+          button.setAttribute('aria-selected', 'false');
+          const img = document.createElement('img');
+          img.src = `../${asset.files.icon}`;
+          img.alt = '';
+          const text = document.createElement('div');
+          text.innerHTML = `<div class="name"></div><div class="meta"></div>`;
+          text.querySelector('.name').textContent = asset.displayName;
+          text.querySelector('.meta').textContent = `${asset.category} · ${asset.status}`;
+          button.append(img, text);
+          button.addEventListener('click', async () => {
+            for (const other of assetListEl.querySelectorAll('button')) other.setAttribute('aria-selected', 'false');
+            button.setAttribute('aria-selected', 'true');
+            try {
+              await loadAsset(asset);
+            } catch (error) {
+              setStatus(`Load failed: ${error.message}`);
+            }
+          });
+          assetListEl.appendChild(button);
+        }
+        assetListEl.querySelector('button')?.click();
+      }
+
+      function animate(time) {
+        requestAnimationFrame(animate);
+        if (active) {
+          active.rotation.y = time * 0.00045;
+          active.position.y = Math.sin(time * 0.002) * 0.04;
+        }
+        renderer.render(scene, camera);
+      }
+
+      try {
+        resize();
+        window.addEventListener('resize', resize);
+        const manifest = await fetch('../manifest/assets.json').then((response) => response.json());
+        renderList(manifest);
+        animate(0);
+      } catch (error) {
+        setStatus(`Preview error: ${error.message}`);
+      }
+    </script>
+  </body>
+</html>
+

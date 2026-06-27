@@ -1,0 +1,42 @@
+{
+  "uploaded": [
+    "/tmp/gradio/2bc7dce135d939efbdf5dd0f622d0e703fd3acd9b68fe8dd1880fece3f17fc49/concept-ai-tpose.png"
+  ],
+  "imageFile": {
+    "path": "/tmp/gradio/2bc7dce135d939efbdf5dd0f622d0e703fd3acd9b68fe8dd1880fece3f17fc49/concept-ai-tpose.png",
+    "url": "https://stabilityai-stable-fast-3d.hf.space/file=/tmp/gradio/2bc7dce135d939efbdf5dd0f622d0e703fd3acd9b68fe8dd1880fece3f17fc49/concept-ai-tpose.png",
+    "orig_name": "concept-ai-tpose.png",
+    "mime_type": "image/png",
+    "meta": {
+      "_type": "gradio.FileData"
+    }
+  },
+  "bgCall": {
+    "event_id": "167bd2dd9cb243b2ae8f0e839b846b60"
+  },
+  "bgResult": [
+    {
+      "visible": true,
+      "value": "Remove Background",
+      "__type__": "update"
+    },
+    null,
+    null,
+    {
+      "visible": false,
+      "value": null,
+      "__type__": "update"
+    },
+    {
+      "visible": false,
+      "__type__": "update"
+    },
+    {
+      "visible": false,
+      "__type__": "update"
+    }
+  ],
+  "call": {
+    "event_id": "ffac33e3f985401b86bd133c2c6785f1"
+  }
+}
