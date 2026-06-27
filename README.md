@@ -79,7 +79,9 @@ ships in the game.
 
 ## Not built yet (by design)
 
-Wallets, smart contracts, marketplace, multiple maps. Multiplayer is a first
-2–4 player slice (see "Play online"): players, PvP, the core, and crates sync;
+Marketplace, multiple maps, and a hardened on-chain economy. Wallet sign-in and
+the `$DEAD` payment rail are scaffolded, but the token store remains disabled
+until its mint and treasury are configured. Multiplayer is a first 2–4 player
+slice (see "Play online"): players, PvP, the core, and crates sync;
 server-authoritative PvE enemy sync, anti-cheat, and reconnection are follow-ups.
 Keep the loop tense before making it big.
