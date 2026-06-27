@@ -19,7 +19,7 @@ No build step. Three.js loads from a CDN via import maps; the dev server is
 Node built-ins only and serves the whole project so the game can import the
 shared asset library.
 
-### Play online (2–6 runners)
+### Play online (2–4 runners)
 
 In a second terminal, start the match server, then deploy online from two
 browser tabs:
@@ -80,6 +80,6 @@ ships in the game.
 ## Not built yet (by design)
 
 Wallets, smart contracts, marketplace, multiple maps. Multiplayer is a first
-2–6 player slice (see "Play online"): players, PvP, the core, and crates sync;
+2–4 player slice (see "Play online"): players, PvP, the core, and crates sync;
 server-authoritative PvE enemy sync, anti-cheat, and reconnection are follow-ups.
 Keep the loop tense before making it big.

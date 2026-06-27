@@ -11,6 +11,7 @@ game-asset-pipeline/preview-server.err.log
 # env / secrets (none should ever live client-side; belt and suspenders)
 .env
 .env.*
+!.env.example
 *.pem
 *.key
 id_*.json

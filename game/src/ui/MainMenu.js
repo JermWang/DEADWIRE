@@ -49,10 +49,14 @@ export class MainMenu {
           <div class="menu-actions">
             <button class="m-btn primary" data-act="solo"><span class="k">▶</span> PLAY · CORE RUN</button>
             <button class="m-btn" data-act="online"><span class="k">◈</span> PLAY ONLINE</button>
-            <button class="m-btn" data-act="loadout"><span class="k">✦</span> CUSTOMIZE RUNNER</button>
+            <button class="m-btn" data-act="locker"><span class="k">▣</span> LOCKER</button>
             <button class="m-btn" data-act="wallet"><span class="k">⬡</span> CONNECT WALLET</button>
           </div>
           <div class="wallet-status" id="walletStatus">Solana · mainnet · not connected</div>
+          <div class="runner-chip" id="runnerChip">
+            <span>${this.profile.onboarded ? this._esc(this.profile.callsign) : 'New runner'}</span>
+            <b>${this.profile.onboarded ? this._esc(this.title) : 'Locker setup pending'}</b>
+          </div>
           <div class="menu-stash">
             <div class="ms-row"><span>RANK</span><b id="msLevel">Lv ${stash.level}</b></div>
             <div class="ms-row"><span>RUNS</span><b id="msRuns">${stash.runs}</b></div>
@@ -69,30 +73,65 @@ export class MainMenu {
           <canvas id="heroCanvas"></canvas>
           <div class="hero-tag" id="heroTag">RUNNER</div>
         </div>
+      </div>
 
-        <div class="menu-right" id="loadoutPanel">
-          <div class="lo-title">RUNNER PROFILE</div>
-          <div class="profile-state" id="profileState">${this.profile.onboarded ? this.title : 'NEW RUNNER'}</div>
-          <div class="lo-field">
-            <label>Callsign</label>
-            <input id="callsign" maxlength="14" placeholder="Runner" />
+      <div class="locker" id="lockerPanel" hidden>
+        <div class="locker-topbar">
+          <div>
+            <span>LOCKER</span>
+            <b>Runner identity · owned cosmetics · extracted stash</b>
           </div>
-          <div class="lo-field">
-            <label>Title</label>
-            <select id="profileTitle">
-              <option value="YARD ROOKIE">Yard Rookie</option>
-              <option value="SCRAP RUNNER">Scrap Runner</option>
-              <option value="CORE PROSPECT">Core Prospect</option>
-            </select>
-          </div>
-          <div id="loSlots"></div>
-          <div class="lo-field">
-            <label>Jacket tint</label>
-            <div class="swatches" id="tints"></div>
-          </div>
-          <div class="lo-title mini">COSMETIC VAULT</div>
-          <div class="cosmetic-vault" id="cosmeticVault"></div>
-          <button class="profile-save" data-act="saveProfile">SAVE RUNNER</button>
+          <button class="locker-close" data-act="closeLocker">CLOSE</button>
+        </div>
+        <div class="locker-layout">
+          <section class="locker-profile">
+            <div class="lo-title">RUNNER PROFILE</div>
+            <div class="profile-state" id="profileState">${this.profile.onboarded ? this._esc(this.title) : 'NEW RUNNER'}</div>
+            <div class="lo-field">
+              <label>Callsign</label>
+              <input id="callsign" maxlength="14" placeholder="Runner" />
+            </div>
+            <div class="lo-field">
+              <label>Title</label>
+              <select id="profileTitle">
+                <option value="YARD ROOKIE">Yard Rookie</option>
+                <option value="SCRAP RUNNER">Scrap Runner</option>
+                <option value="CORE PROSPECT">Core Prospect</option>
+              </select>
+            </div>
+            <div id="loSlots"></div>
+            <div class="lo-field">
+              <label>Jacket tint</label>
+              <div class="swatches" id="tints"></div>
+            </div>
+            <button class="profile-save" data-act="saveProfile">SAVE RUNNER</button>
+          </section>
+
+          <section class="locker-preview">
+            <div class="locker-preview-meta">
+              <span>LIVE LOADOUT</span>
+              <b id="lockerPreviewName">${this._esc(this.profile.callsign || 'Runner')}</b>
+              <small id="lockerPreviewTitle">${this._esc(this.title)}</small>
+            </div>
+          </section>
+
+          <section class="locker-vault">
+            <div class="locker-statline">
+              <div><span>RANK</span><b id="lockerLevel">Lv ${stash.level}</b></div>
+              <div><span>XP</span><b id="lockerXp">${stash.xp}</b></div>
+              <div><span>RUNS</span><b id="lockerRuns">${stash.runs}</b></div>
+              <div><span>EXT</span><b id="lockerExtractions">${stash.extractions}</b></div>
+            </div>
+            <div class="lo-title mini">COSMETIC VAULT</div>
+            <div class="cosmetic-vault" id="cosmeticVault"></div>
+            <div class="lo-title mini">EXTRACTED STASH</div>
+            <div class="locker-stash" id="lockerStashRows"></div>
+            <div class="lo-title mini">SOLANA VAULT</div>
+            <div class="locker-chain">
+              <span id="lockerVaultStatus">Solana · mainnet · not connected</span>
+              <b>Mainnet identity · vault cache · extracted assets</b>
+            </div>
+          </section>
         </div>
       </div>`;
     this.root.appendChild(this.el);
@@ -132,6 +171,7 @@ export class MainMenu {
       loSlots.appendChild(wrap);
     }
     this._renderVault(cosmetics, stash);
+    this._renderLockerInventory(stash);
 
     // jacket tint swatches
     const tints = ['#3b4a5a', '#5a3b4a', '#3b5a44', '#5a4f3b', '#46405a', '#222a2f'];
@@ -149,9 +189,15 @@ export class MainMenu {
       };
       tintWrap.appendChild(s);
     });
-    this.el.querySelector('#callsign').oninput = () => this._markProfileDirty();
+    this.el.querySelector('#callsign').oninput = () => {
+      const preview = this.el.querySelector('#lockerPreviewName');
+      if (preview) preview.textContent = this.el.querySelector('#callsign').value || 'Runner';
+      this._markProfileDirty();
+    };
     this.el.querySelector('#profileTitle').onchange = () => {
       this.title = this.el.querySelector('#profileTitle').value;
+      const titleEl = this.el.querySelector('#lockerPreviewTitle');
+      if (titleEl) titleEl.textContent = this.title;
       this._markProfileDirty();
     };
 
@@ -159,7 +205,8 @@ export class MainMenu {
     this.el.querySelectorAll('[data-act]').forEach((b) => {
       b.onclick = () => {
         const act = b.dataset.act;
-        if (act === 'loadout') { this.el.classList.toggle('show-loadout'); return; }
+        if (act === 'locker') { this._openLocker(); return; }
+        if (act === 'closeLocker') { this._closeLocker(); return; }
         if (act === 'wallet') { this._connectWallet(); return; }
         if (act === 'saveProfile') { this._saveProfile(true); return; }
         this._play(act === 'online');
@@ -171,6 +218,28 @@ export class MainMenu {
   }
 
   _esc(s) { return String(s).replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c])); }
+
+  _openLocker() {
+    const panel = this.el.querySelector('#lockerPanel');
+    if (!panel) return;
+    panel.hidden = false;
+    this.el.classList.add('locker-open');
+    this._refreshStash();
+  }
+
+  _closeLocker() {
+    const panel = this.el.querySelector('#lockerPanel');
+    if (!panel) return;
+    panel.hidden = true;
+    this.el.classList.remove('locker-open');
+  }
+
+  _setWalletStatus(text) {
+    ['#walletStatus', '#lockerVaultStatus'].forEach((id) => {
+      const el = this.el.querySelector(id);
+      if (el) el.textContent = text;
+    });
+  }
 
   // Public reads from Supabase (anon, RLS-allowed): leaderboard + sector control.
   async _loadOnlineBoards() {
@@ -199,18 +268,17 @@ export class MainMenu {
   _short(addr) { return `${addr.slice(0, 4)}…${addr.slice(-4)}`; }
 
   async _connectWallet() {
-    const status = this.el.querySelector('#walletStatus');
     if (Account.isLoggedIn()) {
-      status.textContent = `Solana · ${Wallet.cluster()} · ${this._short(Account.wallet)} ✓`;
+      this._setWalletStatus(`Solana · ${Wallet.cluster()} · ${this._short(Account.wallet)} ✓`);
       return;
     }
     try {
-      status.textContent = 'Connecting wallet…';
+      this._setWalletStatus('Connecting wallet…');
       const { wallet } = await Account.signIn();
-      status.textContent = `Solana · ${Wallet.cluster()} · ${this._short(wallet)} ✓`;
+      this._setWalletStatus(`Solana · ${Wallet.cluster()} · ${this._short(wallet)} ✓`);
       this._refreshStash();   // cloud stash hydrated the local cache on login
     } catch (e) {
-      status.textContent = e?.message || 'Wallet connect failed';
+      this._setWalletStatus(e?.message || 'Wallet connect failed');
     }
   }
 
@@ -220,6 +288,12 @@ export class MainMenu {
     set('#msLevel', `Lv ${s.level}`);
     set('#msRuns', s.runs);
     set('#msExtractions', s.extractions);
+    set('#lockerLevel', `Lv ${s.level}`);
+    set('#lockerXp', s.xp);
+    set('#lockerRuns', s.runs);
+    set('#lockerExtractions', s.extractions);
+    this._renderLockerInventory(s);
+    this._renderVault(byCategory('cosmetic'), s);
   }
 
   _unlockText(cosmetic) {
@@ -232,6 +306,7 @@ export class MainMenu {
 
   _renderVault(cosmetics, stash) {
     const vault = this.el.querySelector('#cosmeticVault');
+    if (!vault) return;
     vault.innerHTML = cosmetics.map((cosmetic) => {
       const unlocked = Stash.isCosmeticUnlocked(cosmetic, stash);
       return `<div class="${unlocked ? 'unlocked' : 'locked'}">
@@ -239,6 +314,15 @@ export class MainMenu {
         <span>${cosmetic.slot} · ${cosmetic.rarity || 'common'} · ${unlocked ? 'owned' : this._unlockText(cosmetic)}</span>
       </div>`;
     }).join('');
+  }
+
+  _renderLockerInventory(stash) {
+    const rows = this.el.querySelector('#lockerStashRows');
+    if (!rows) return;
+    const entries = Object.entries(stash.items || {}).sort(([a], [b]) => a.localeCompare(b));
+    rows.innerHTML = entries.length
+      ? entries.map(([item, qty]) => `<div class="stash-row"><span>${this._esc(item)}</span><b>${qty}</b></div>`).join('')
+      : '<div class="stash-empty">No extracted inventory yet</div>';
   }
 
   _markProfileDirty() {
@@ -256,6 +340,15 @@ export class MainMenu {
     this.el.classList.remove('profile-needed');
     const state = this.el.querySelector('#profileState');
     if (state) state.textContent = title;
+    const chip = this.el.querySelector('#runnerChip');
+    if (chip) {
+      chip.querySelector('span').textContent = callsign;
+      chip.querySelector('b').textContent = title;
+    }
+    const preview = this.el.querySelector('#lockerPreviewName');
+    if (preview) preview.textContent = callsign;
+    const previewTitle = this.el.querySelector('#lockerPreviewTitle');
+    if (previewTitle) previewTitle.textContent = title;
     return this.profile;
   }
 

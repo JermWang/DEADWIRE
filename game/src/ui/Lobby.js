@@ -13,7 +13,7 @@ import { disposeObjectTree } from '../render/dispose.js';
 import { Stash } from '../systems/Stash.js';
 import { matchWsBase } from '../config/runtime.js';
 
-const MAX_PARTY = 6;
+const MAX_PARTY = 4;
 
 function makePartyCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -124,7 +124,7 @@ export class Lobby {
           <div class="mode-art">
             <span>CORE RUN</span>
             <b>BREAKER YARD</b>
-            <small>6 RUNNERS · PvPvE · 8 MIN</small>
+            <small>4 RUNNERS · PvPvE · 8 MIN</small>
           </div>
           <button class="mode-select" data-act="mode">
             <span id="modeName">${this.online ? 'SQUADS · ONLINE' : 'SOLO · PRIVATE'}</span>
@@ -321,12 +321,10 @@ export class Lobby {
     this.partyRoot = new THREE.Group();
     this.scene.add(this.partyRoot);
     const slots = [
-      { x: -1.12, z: 0.28, scale: 1.03 },
-      { x: 1.12, z: 0.28, scale: 1.0 },
-      { x: -3.25, z: -0.55, scale: 0.92 },
-      { x: 3.25, z: -0.55, scale: 0.92 },
-      { x: -2.0, z: -1.62, scale: 0.86 },
-      { x: 2.0, z: -1.62, scale: 0.86 },
+      { x: -1.12, z: 0.38, scale: 1.04 },
+      { x: 1.12, z: 0.38, scale: 1.02 },
+      { x: -2.32, z: -1.18, scale: 0.94 },
+      { x: 2.32, z: -1.18, scale: 0.94 },
     ];
     for (let i = 0; i < MAX_PARTY; i++) {
       const layout = slots[i];
@@ -334,12 +332,12 @@ export class Lobby {
       platform.position.set(layout.x, -0.05, layout.z);
       platform.scale.setScalar(layout.scale);
       const base = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.68, 0.84, 0.24, 8),
+        new THREE.CylinderGeometry(0.56, 0.7, 0.24, 8),
         mat(PALETTE.steelDark, { metal: 0.42, rough: 0.52 }),
       );
       platform.add(base);
       const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(0.7, 0.024, 5, 32),
+        new THREE.TorusGeometry(0.58, 0.022, 5, 32),
         mat(PALETTE.coreGlow, { emissive: PALETTE.coreGlow, emissiveIntensity: 2.1 }),
       );
       ring.rotation.x = Math.PI / 2;
@@ -395,7 +393,7 @@ export class Lobby {
 
   _rebuildModels() {
     if (!this.platforms.length) return;
-    const tints = ['#2f78b7', '#7c4353', '#3f7658', '#8a6a38', '#46405a', '#4b6f76'];
+    const tints = ['#2f78b7', '#7c4353', '#3f7658', '#8a6a38'];
     for (let i = 0; i < this.platforms.length; i++) {
       const slot = this.platforms[i].userData.model;
       disposeObjectTree(slot);

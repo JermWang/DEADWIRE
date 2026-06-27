@@ -10,7 +10,7 @@ import { CONFIG } from '../game/src/data/config.js';
 // Railway (and most PaaS) inject PORT; fall back to MATCH_PORT then the dev default.
 const PORT = Number(process.env.PORT || process.env.MATCH_PORT || 5181);
 const HOST = process.env.HOST || '0.0.0.0';
-const MAX_LOBBY = 6;
+const MAX_LOBBY = 4;
 const clients = new Map(); // id -> Client
 const lobbies = new Map(); // partyCode -> Map<id, LobbyClient>
 let nextId = 1;

@@ -10,6 +10,12 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 const startPort = Number(process.env.PORT || 5180);
+const publicRoots = [
+  path.join(root, 'game'),
+  path.join(root, 'game-asset-pipeline', 'asset-lib'),
+  path.join(root, 'game-asset-pipeline', 'studio'),
+  path.join(root, 'public'),
+];
 
 const types = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -18,16 +24,25 @@ const types = {
   '.png': 'image/png', '.webp': 'image/webp',
 };
 
+function isInside(parent, child) {
+  const relative = path.relative(parent, child);
+  return relative === '' || (!relative.startsWith('..' + path.sep) && relative !== '..' && !path.isAbsolute(relative));
+}
+
 function resolve(urlPath) {
   const decoded = decodeURIComponent(urlPath.split('?')[0]);
   let clean = decoded === '/' ? '/game/index.html' : decoded;
   const full = path.resolve(root, '.' + clean);
-  if (!full.startsWith(root)) return null;
+  if (!publicRoots.some((allowed) => isInside(allowed, full))) return null;
   return full;
 }
 
 const server = http.createServer(async (req, res) => {
   try {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      res.writeHead(405, { Allow: 'GET, HEAD' });
+      return res.end('Method not allowed');
+    }
     // redirect bare root to the game so relative module paths resolve correctly
     if ((req.url || '/').split('?')[0] === '/') {
       res.writeHead(302, { Location: '/game/' }); return res.end();
@@ -42,7 +57,12 @@ const server = http.createServer(async (req, res) => {
       'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
       'Pragma': 'no-cache',
       'Expires': '0',
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'no-referrer',
+      'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
     });
+    if (req.method === 'HEAD') return res.end();
     createReadStream(file).pipe(res);
   } catch { res.writeHead(404); res.end('Not found'); }
 });
