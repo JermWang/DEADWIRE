@@ -187,6 +187,44 @@ function addSmallPoiDepth(group, poi) {
   }
 }
 
+function addClinicDepth(group, poi) {
+  const groundY = -poi.position.y;
+  // Partition the reception hall into ward rooms with a central corridor.
+  detailBox(group, 'clinic_corridor_wall', -2.6, groundY + 1.1, 0, 0.22, 2.2, 7.2, 0x46514f);
+  detailBox(group, 'clinic_corridor_wall', 2.6, groundY + 1.1, 0, 0.22, 2.2, 7.2, 0x46514f);
+  for (const z of [-2.4, 1.8]) {
+    detailBox(group, 'clinic_ward_divider', -4.6, groundY + 1.05, z, 3.4, 2.1, 0.18, 0x3f484d);
+    detailBox(group, 'clinic_ward_divider', 4.6, groundY + 1.05, z, 3.4, 2.1, 0.18, 0x3f484d);
+  }
+  detailBox(group, 'clinic_bed', -4.4, groundY + 0.4, 3.0, 1.0, 0.5, 2.1, 0xb9c4c2);
+  detailBox(group, 'clinic_bed', 4.4, groundY + 0.4, -1.0, 1.0, 0.5, 2.1, 0xb9c4c2);
+  detailBox(group, 'clinic_sign', 0, groundY + 2.1, -4.6, 1.8, 0.5, 0.1, 0x4dffb0, 0, {
+    emissive: 0x35d39a,
+    emissiveIntensity: 0.5,
+  });
+  const loftY = 5 - poi.position.y;
+  detailBox(group, 'clinic_loft_rail', 0, loftY + 0.55, -2.6, 8.2, 0.9, 0.16, 0x3a454a);
+  place(group, 'server_rack', -3.0, loftY + 0.12, 1.2, 0, undefined, 0.78);
+}
+
+function addReactorCoreDepth(group, poi) {
+  const groundY = -poi.position.y;
+  // Floor hazard ring + cable runs feeding the central tower.
+  detailBox(group, 'core_scorch_ring', 0, groundY + 0.03, 0, 9.5, 0.035, 9.5, 0x3a2420, 0, {
+    rough: 0.6,
+  });
+  for (const a of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+    const x = Math.cos(a) * 3.4;
+    const z = Math.sin(a) * 3.4;
+    detailBox(group, 'core_cable', x, groundY + 0.15, z, 0.18, 0.18, 3.0, 0x20292e, a);
+  }
+  const mezzY = 5 - poi.position.y;
+  detailBox(group, 'core_catwalk_glow', 0, mezzY + 2.6, 0, 11, 0.08, 0.08, 0x63d2ff, 0, {
+    emissive: 0x63d2ff,
+    emissiveIntensity: 0.5,
+  });
+}
+
 function addInteriorDepth(group, poi) {
   switch (poi.category) {
     case 'apartment_block': addApartmentDepth(group, poi); break;
@@ -195,6 +233,8 @@ function addInteriorDepth(group, poi) {
     case 'parking_garage': addGarageDepth(group, poi); break;
     case 'locked_loot_room': addVaultDepth(group, poi); break;
     case 'underground_tunnel': addTunnelDepth(group, poi); break;
+    case 'clinic': addClinicDepth(group, poi); break;
+    case 'reactor_core': addReactorCoreDepth(group, poi); break;
     default: addSmallPoiDepth(group, poi); break;
   }
 }
@@ -340,6 +380,78 @@ function buildPlaza(group) {
   place(group, 'warning_light', 0, 0, -2);
 }
 
+function buildReactorCore(group, poi) {
+  // Central apex hot zone: reactor tower ringed by an elevated catwalk.
+  place(group, 'reactor_tower', 0, 0, 0, 0, undefined, 1.2);
+  for (const [x, z] of [[-5.5, -5.5], [5.5, -5.5], [-5.5, 5.5], [5.5, 5.5]]) {
+    place(group, 'fuel_tank', x, 0, z, 0.4, undefined, 0.7);
+    place(group, 'warning_light', x * 0.7, 0, z * 0.7);
+  }
+  place(group, 'pipe_run', 0, 0, -6, 0, { length: 12 });
+  place(group, 'pipe_run', 0, 0, 6, 0, { length: 12 });
+  place(group, 'light_tower', -6.5, 0, 0);
+  place(group, 'light_tower', 6.5, 0, 0);
+  const mezzY = 5 - poi.position.y;
+  // Catwalk ring deck around the core at the second floor.
+  for (const [x, z, rot, len] of [[0, -5.4, 0, 11], [0, 5.4, 0, 11], [-5.4, 0, Math.PI / 2, 11], [5.4, 0, Math.PI / 2, 11]]) {
+    detailBox(group, 'core_catwalk', x, mezzY + 0.05, z, rot ? 1.6 : len, 0.18, rot ? len : 1.6, 0x4d595d, rot ? 0 : 0);
+    place(group, 'barrier', x, mezzY + 0.12, z, rot, { length: len * 0.9 }, 0.7);
+  }
+  detailBox(group, 'core_reactor_glow', 0, 2.4, 0, 1.6, 4.6, 1.6, 0xff7a3d, 0, {
+    emissive: 0xff5a2a,
+    emissiveIntensity: 1.1,
+  });
+}
+
+function buildSubstation(group, poi) {
+  wallShell(group, poi, -poi.position.y, 3.0);
+  for (const [x, z] of [[-3, -3], [3, 3], [-3, 3]]) {
+    place(group, 'fuel_tank', x, 0, z, 0, undefined, 0.85);
+  }
+  place(group, 'generator', 3, 0, -3, Math.PI / 2);
+  place(group, 'pipe_run', 0, 0, 0, Math.PI / 2, { length: 9 });
+  place(group, 'warning_light', 0, 0, -4);
+  place(group, 'light_tower', -5, 0, 5);
+}
+
+function buildClinic(group, poi) {
+  wallShell(group, poi, -poi.position.y, 3.6);
+  place(group, 'container', -4, 0, 2.5, 0, { color: COLORS.blue });
+  place(group, 'terminal', 3.5, 0, -3, Math.PI);
+  place(group, 'generator', 5, 5 - poi.position.y, 0, Math.PI / 2, undefined, 0.8);
+  place(group, 'light_tower', 0, 0, -4.5);
+}
+
+function buildFuelDepot(group, poi) {
+  for (const [x, z] of [[-3.5, -3.5], [3.5, -3.5], [-3.5, 3.5], [3.5, 3.5], [0, 0]]) {
+    place(group, 'fuel_tank', x, 0, z, 0, undefined, 1.0);
+  }
+  place(group, 'pipe_run', 0, 0, -5, 0, { length: 10 });
+  place(group, 'warning_light', -4, 0, 0);
+  place(group, 'warning_light', 4, 0, 0);
+  place(group, 'light_tower', 0, 0, 5);
+}
+
+function buildCommsTower(group, poi) {
+  const levels = poi.floors.map((floor) => floor.y - poi.position.y);
+  for (const y of levels) {
+    wallShell(group, poi, y, 4.4);
+    place(group, 'warning_light', 0, y, -poi.size.z / 2 + 0.8);
+  }
+  place(group, 'server_rack', -2.5, 0, 2.5, 0);
+  place(group, 'server_rack', 2.5, 0, 2.5, Math.PI);
+  place(group, 'generator', 0, 0, -2.5, 0, undefined, 0.8);
+  const deckY = 10 - poi.position.y;
+  place(group, 'reactor_tower', 0, deckY, 0, 0, undefined, 0.55);
+  place(group, 'light_tower', -3, deckY, 2.5);
+  place(group, 'light_tower', 3, deckY, -2.5);
+  detailBox(group, 'comms_antenna', 0, deckY + 3.2, 0, 0.18, 6.0, 0.18, 0x2d383d);
+  detailBox(group, 'comms_beacon', 0, deckY + 6.3, 0, 0.4, 0.4, 0.4, 0xff4f4f, 0, {
+    emissive: 0xff3b3b,
+    emissiveIntensity: 1.0,
+  });
+}
+
 export function createDeadwirePOIAssets(poi) {
   const group = new THREE.Group();
   group.name = `${poi.id}_coded_assets`;
@@ -355,6 +467,11 @@ export function createDeadwirePOIAssets(poi) {
     case 'locked_loot_room': buildVault(group, poi); break;
     case 'alley': buildAlley(group, poi); break;
     case 'plaza': buildPlaza(group, poi); break;
+    case 'reactor_core': buildReactorCore(group, poi); break;
+    case 'substation': buildSubstation(group, poi); break;
+    case 'clinic': buildClinic(group, poi); break;
+    case 'fuel_depot': buildFuelDepot(group, poi); break;
+    case 'comms_tower': buildCommsTower(group, poi); break;
   }
 
   addInteriorDepth(group, poi);

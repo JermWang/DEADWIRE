@@ -1,19 +1,25 @@
 // Breaker Yard — Deadwire's flagship map (single canonical arena, instanced per server).
-// ~90x90 multi-district wasteland: reactor core (center), warehouse (N), cooling
-// works (NW), scrap maze (W), black-market settlement (SW), rail yard (E),
-// flooded data center (SE), extraction road (S). Pure data — easy to iterate.
+// Expanded ~2x extraction map. Gameplay coordinates below are authored in the
+// semantic (pre-scale) space and multiplied by the layout scale in BreakerYard.js,
+// so spawns / extraction / core / nests stay coherent as the footprint grows.
+// POIs (perimeter = LOW/MID safe loot, center + marked spots = HIGH danger HOT
+// ZONES) and their interiors live in DistrictMap01.js; this file owns the live
+// gameplay layer (spawns, extraction, enemy nests, core).
 
 export const BREAKER_YARD = {
   id: 'breaker_yard',
   name: 'Breaker Yard',
-  bounds: { min: [-45, -45], max: [45, 45] },
+  bounds: { min: [-52, -52], max: [52, 52] },
   spawnPoints: [
-    [-30, 30], [30, 30], [-38, -2], [38, -2], [0, 36], [0, -38],
+    // Perimeter starts ringing the larger map so rotations into the center read clearly.
+    [-44, 44], [44, 44], [-48, -2], [48, -2], [0, 46], [0, -48],
+    [-44, -44], [44, -44],
   ],
-  coreSpawn: [0, 0],            // reactor core chamber (center)
+  coreSpawn: [0, 0],            // reactor core chamber (center) — apex HOT ZONE
   extractionZones: [
-    { pos: [-16, -40], radius: 3.0 },   // south extraction road W
-    { pos: [16, -40], radius: 3.0 },    // south extraction road E
+    { pos: [-20, -48], radius: 3.4 },   // south extraction road W
+    { pos: [20, -48], radius: 3.4 },    // south extraction road E
+    { pos: [48, 44], radius: 3.0 },     // NE perimeter extract (near substation loop)
   ],
 
   // district ground tinting (rendered as flat decals for visual identity)
@@ -26,13 +32,21 @@ export const BREAKER_YARD = {
   ],
 
   enemyNests: [
-    { pos: [3, 7], type: 'hauler', count: 1 },     // core guardian
-    { pos: [-4, 9], type: 'crawler', count: 3 },   // reactor pit
+    // --- Center · Reactor Core (apex HOT ZONE) — heaviest guard on the map ---
+    { pos: [0, 0], type: 'hauler', count: 1 },     // core boss guardian
+    { pos: [3, 4], type: 'crawler', count: 3 },    // core chamber swarm
+    { pos: [-4, 5], type: 'turret', count: 1 },    // catwalk overwatch
+    // --- Other marked combat POIs ---
+    { pos: [-38, 30], type: 'turret', count: 2 },  // comms tower (HOT) overwatch
+    { pos: [-9, -24], type: 'crawler', count: 3 }, // keycard vault (HOT)
+    { pos: [24, -8], type: 'turret', count: 2 },   // parking garage (HOT)
+    { pos: [0, 7], type: 'crawler', count: 2 },    // reactor pit approach
+    // --- Perimeter / mid POIs (lighter) ---
     { pos: [0, 32], type: 'crawler', count: 2 },   // warehouse
-    { pos: [-30, 26], type: 'turret', count: 2 },  // cooling works overwatch
-    { pos: [33, 4], type: 'turret', count: 2 },    // rail yard crossfire
+    { pos: [33, 4], type: 'turret', count: 1 },    // rail yard crossfire
     { pos: [29, -24], type: 'turret', count: 1 },  // data center
-    { pos: [-29, -24], type: 'crawler', count: 3 },// settlement
+    { pos: [40, 10], type: 'crawler', count: 2 },  // east substation
+    { pos: [30, 32], type: 'crawler', count: 2 },  // field clinic
     { pos: [-34, -2], type: 'crawler', count: 2 }, // scrap maze
   ],
 

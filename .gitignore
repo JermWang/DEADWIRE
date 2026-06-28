@@ -21,6 +21,7 @@ wallet*.json
 # os / editor noise
 .DS_Store
 Thumbs.db
+*.pid
 
 # build output
 dist/

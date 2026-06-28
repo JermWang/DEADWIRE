@@ -100,17 +100,18 @@ export class Game {
     this.insertion = { total, remaining: total, launch: 0, released: false, lastSecond: null };
     this.insertionPods = [];
     if (this.player?.mesh) this.player.mesh.visible = false;
-    const spawnIndices = CONFIG.match.insertionPodSpawns || [5];
+    const spawnIndices = this._podSpawns();
     for (const [podIndex, spawnIndex] of spawnIndices.entries()) {
       const sp = this.map.def.spawnPoints[spawnIndex] || this.map.def.spawnPoints[0];
       const position = new THREE.Vector3(sp[0], 0, sp[1]);
-      const occupied = spawnIndex === 5;
+      // pod index 0 is always the local runner's occupied drop pod
+      const occupied = podIndex === 0;
       const pod = new InsertionPod(position, { index: podIndex, occupied });
       this.scene.add(pod.root);
       this.insertionPods.push(pod);
     }
     this.hud.setObjective('Insertion pods descending - face inward until GO');
-    this.hud.banner('SQUAD INSERTION // BRACE', 1200);
+    this.hud.banner(`${this._modeLabel()} INSERTION // BRACE`, 1200);
   }
 
   _updateInsertionSequence(dt) {
@@ -194,6 +195,17 @@ export class Game {
     return Math.max(0, this.insertionServerRemaining - (performance.now() - syncedAt) / 1000);
   }
 
+  // ---- per-mode (party-size) tunables — fall back to CONFIG.match for solo ----
+  _matchDurationSec() { return this.mode?.durationSec ?? CONFIG.match.durationSec; }
+  _coreSpawnSec() { return this.mode?.coreSpawnSec ?? CONFIG.match.coreSpawnSec; }
+  _modeLabel() { return this.mode?.label || 'SOLO'; }
+  _podSpawns() {
+    // One pod per runner in the party; solo falls back to the full ambient ring.
+    return (this.mode?.pods && this.mode.pods.length)
+      ? this.mode.pods
+      : (CONFIG.match.insertionPodSpawns || [5]);
+  }
+
   _ammoMax() {
     return CONFIG.player.ammoMax + (this.runMods?.ammoMaxBonus || 0);
   }
@@ -214,7 +226,11 @@ export class Game {
     }));
   }
 
-  start(cosmetics = {}, online = false, name = 'Runner') {
+  start(cosmetics = {}, online = false, name = 'Runner', partySize = 1) {
+    // Party size auto-selects the mode (1=SOLO..4=SQUAD). Solo (LocalNet) keeps
+    // working exactly as before because mode[1] mirrors CONFIG.match defaults.
+    this.partySize = Math.max(1, Math.min(4, Number(partySize) || 1));
+    this.mode = (CONFIG.modes && CONFIG.modes[this.partySize]) || null;
     this._reset();
     this.input.keys.clear();        // drop any keys held from the deploy/results screen
     this.cosmetics = cosmetics;
@@ -316,7 +332,8 @@ export class Game {
     this.hud.setLoot(this.run.loot);
     this.hud.setWeapon(this.player.loadout.map((w) => w.name), this.player.weaponIndex);
     this.hud.setAmmo(this.player.ammo);
-    this.hud.banner('DEPLOYED · Breaker Yard');
+    const runnerLabel = this.partySize > 1 ? `${this.partySize} RUNNERS` : 'Breaker Yard';
+    this.hud.banner(`DEPLOYED · ${runnerLabel}`);
     this.insertionPending = true;
     this.hud.setObjective('Insertion pods waiting for drop clearance');
 
@@ -367,6 +384,11 @@ export class Game {
   _onWelcome(m) {
     this.localId = m.id;
     if (m.match) {
+      // Server is authoritative on party size → adopt its mode for HUD/timing.
+      if (m.match.size) {
+        this.partySize = Math.max(1, Math.min(4, Number(m.match.size) || this.partySize));
+        this.mode = (CONFIG.modes && CONFIG.modes[this.partySize]) || this.mode;
+      }
       this.timeLeft = m.match.durationSec - Math.max(0, m.match.elapsed || 0);
       if (m.match.insertionRemaining != null) {
         this.insertionServerRemaining = Math.max(0, Number(m.match.insertionRemaining) || 0);
@@ -509,7 +531,7 @@ export class Game {
     }
     this.objectiveIndicators = [];
 
-    this.timeLeft = CONFIG.match.durationSec;
+    this.timeLeft = this._matchDurationSec();
     this.run = { loot: {}, machines: 0, players: 0, coreExtracted: false, coreLost: false };
     this.defeatedRemoteIds = new Set();
     this.coreSpawned = false;
@@ -551,7 +573,7 @@ export class Game {
     if (this.timeLeft <= 0) return this._endRun(false, 'Timed out in the yard');
 
     // ---- core spawn (solo: timer-driven; online: server 'core_spawn' event) ----
-    if (!this.online && !this.coreSpawned && CONFIG.match.durationSec - this.timeLeft >= CONFIG.match.coreSpawnSec) {
+    if (!this.online && !this.coreSpawned && this._matchDurationSec() - this.timeLeft >= this._coreSpawnSec()) {
       this._spawnCore();
     }
 
@@ -1079,7 +1101,7 @@ export class Game {
     if (Account.isLoggedIn()) Account.applyRun(results).catch((e) => console.warn('[cloud] applyRun failed', e));
     if (this.online) this.net.disconnect?.();
     showResults(this.uiRoot, results, stash, {
-      onReplay: () => this.start(this.cosmetics, this.online, this.playerName),
+      onReplay: () => this.start(this.cosmetics, this.online, this.playerName, this.partySize),
       onMenu: this.onExitToMenu,
     });
   }

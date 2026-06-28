@@ -368,6 +368,99 @@ async function handleBuyGold(body: any) {
   return json({ credited: gold, deadAmount: dead, stash: await snapshot(fresh) });
 }
 
+// Shared on-chain verifier for money-significant actions. Fetches the tx on the
+// configured Solana RPC, confirms it succeeded, and returns the $DEAD amount that
+// actually landed in the treasury. Returns { error, status } on any problem.
+async function verifyDeadDeposit(cfg: Record<string, string>, txSig: string) {
+  const rpc = cfg.solana_rpc || "https://api.mainnet-beta.solana.com";
+  const r = await fetch(rpc, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getTransaction", params: [txSig, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0, commitment: "confirmed" }] }),
+  });
+  const j = await r.json().catch(() => ({}));
+  const tx = j?.result;
+  if (!tx || tx.meta?.err) return { error: "tx not found or failed", status: 400 };
+  const dead = deadToTreasury(tx, cfg.dead_mint, cfg.treasury);
+  if (dead <= 0) return { error: "no $DEAD transfer to treasury in tx", status: 400 };
+  return { dead };
+}
+
+// deposit — player sent $DEAD to the treasury; record the on-chain deposit.
+// Double-verified: settlements row (tx_sig unique) + economy_ledger row. We do
+// NOT mint Gold here (Gold is bought via buyGold); this just books the $DEAD in.
+async function handleDeposit(body: any) {
+  const t = await verifyToken(String(body.token || ""));
+  if (!t) return json({ error: "unauthorized" }, 401);
+  const txSig = String(body.txSig || "");
+  if (!txSig) return json({ error: "missing txSig" }, 400);
+  const cfg = await getConfig();
+  if (!cfg.dead_mint || !cfg.treasury) return json({ error: "store not configured" }, 503);
+  const { data: dup } = await admin.from("settlements").select("id").eq("tx_sig", txSig).maybeSingle();
+  if (dup) return json({ error: "already settled" }, 409);
+  const v = await verifyDeadDeposit(cfg, txSig);
+  if (v.error) return json({ error: v.error }, v.status);
+  const dead = v.dead!;
+  await admin.from("settlements").insert({ tx_sig: txSig, profile_id: t.pid, wallet: t.w, kind: "deposit", dead_amount: dead });
+  await admin.from("economy_ledger").insert({ profile_id: t.pid, currency: "DEAD", delta: Math.floor(dead), reason: "deposit:$DEAD", tx_sig: txSig });
+  return json({ ok: true, deadAmount: dead });
+}
+
+// withdraw — REQUEST ONLY. We never auto-sign payouts (no hot wallet client- or
+// server-side here). Record an intent row flagged for manual review.
+async function handleWithdraw(body: any) {
+  const t = await verifyToken(String(body.token || ""));
+  if (!t) return json({ error: "unauthorized" }, 401);
+  const cfg = await getConfig();
+  if (!cfg.dead_mint || !cfg.treasury) return json({ error: "store not configured" }, 503);
+  const dead = Math.max(0, Number(body.deadAmount || 0));
+  if (!(dead > 0)) return json({ error: "bad amount" }, 400);
+  const dest = String(body.wallet || t.w || "");
+  if (!isPubkey(dest)) return json({ error: "bad destination wallet" }, 400);
+  const { data, error } = await admin.from("withdrawals").insert({
+    profile_id: t.pid, wallet: dest, dead_amount: dead, status: "requested",
+    note: "auto-payout disabled; manual review required",
+  }).select("id").single();
+  if (error) return json({ error: error.message }, 400);
+  // Book the intent in the ledger too (negative request); no funds move yet.
+  await admin.from("economy_ledger").insert({ profile_id: t.pid, currency: "DEAD", delta: -Math.floor(dead), reason: "withdraw_request:$DEAD" });
+  return json({ ok: true, requestId: data.id, status: "requested", deadAmount: dead, manualReview: true });
+}
+
+// tradeSale — a marketplace sale settled in $DEAD between two players. Verify the
+// on-chain transfer to the treasury, double-record it, then transfer item
+// ownership in the DB (off-chain stash) from seller to buyer.
+async function handleTradeSale(body: any) {
+  const t = await verifyToken(String(body.token || ""));
+  if (!t) return json({ error: "unauthorized" }, 401);   // t = buyer (the payer)
+  const txSig = String(body.txSig || "");
+  const listingId = String(body.listingId || "");
+  if (!txSig) return json({ error: "missing txSig" }, 400);
+  if (!listingId) return json({ error: "missing listingId" }, 400);
+  const cfg = await getConfig();
+  if (!cfg.dead_mint || !cfg.treasury) return json({ error: "store not configured" }, 503);
+  const { data: dup } = await admin.from("settlements").select("id").eq("tx_sig", txSig).maybeSingle();
+  if (dup) return json({ error: "already settled" }, 409);
+  const { data: listing } = await admin.from("marketplace_listings").select("*").eq("id", listingId).maybeSingle();
+  if (!listing) return json({ error: "listing not found" }, 404);
+  if (listing.status !== "active") return json({ error: "listing not active" }, 409);
+  if (listing.seller_id === t.pid) return json({ error: "cannot buy your own listing" }, 400);
+  const v = await verifyDeadDeposit(cfg, txSig);
+  if (v.error) return json({ error: v.error }, v.status);
+  const dead = v.dead!;
+  if (dead + 1e-9 < Number(listing.price_dead)) return json({ error: "underpaid for listing" }, 400);
+  // Double-verify on-chain action: settlements (idempotent) + economy_ledger.
+  await admin.from("settlements").insert({ tx_sig: txSig, profile_id: t.pid, wallet: t.w, kind: "trade_sale", dead_amount: dead, sku: listingId });
+  await admin.from("economy_ledger").insert({ profile_id: t.pid, currency: "DEAD", delta: Math.floor(dead), reason: "trade_sale:$DEAD", tx_sig: txSig });
+  // Transfer item ownership off-chain: debit seller, credit buyer.
+  const qty = Math.max(1, Math.floor(Number(listing.qty) || 1));
+  await bumpItem(listing.seller_id, listing.item, -qty);
+  await bumpItem(t.pid, listing.item, qty);
+  await admin.from("marketplace_listings").update({ status: "sold", buyer_id: t.pid, tx_sig: txSig, updated_at: new Date().toISOString() }).eq("id", listingId);
+  const { data: fresh } = await admin.from("profiles").select("*").eq("id", t.pid).single();
+  return json({ ok: true, deadAmount: dead, item: listing.item, qty, stash: await snapshot(fresh) });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
@@ -387,6 +480,9 @@ Deno.serve(async (req) => {
       case "save": return await handleSave(body);
       case "applyRun": return await handleApplyRun(body);
       case "buyGold": return await handleBuyGold(body);
+      case "deposit": return await handleDeposit(body);
+      case "withdraw": return await handleWithdraw(body);
+      case "tradeSale": return await handleTradeSale(body);
       default: return json({ error: "unknown action" }, 400);
     }
   } catch (e) { return json({ error: String((e as Error)?.message || e) }, 500); }

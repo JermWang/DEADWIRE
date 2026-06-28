@@ -11,7 +11,10 @@ import { DistantBackdrop } from './DistantBackdrop.js';
 import { VegetationField } from './VegetationField.js';
 import { disposeObjectTree } from '../render/dispose.js';
 
-const MAP_LINEAR_SCALE = Math.sqrt(5);
+// Linear spacing multiplier applied between POIs. Raised from sqrt(5) so the
+// expanded POI roster spreads across a roughly 2x-larger playable footprint
+// while each POI keeps its authored internal dimensions.
+const MAP_LINEAR_SCALE = Math.sqrt(7);
 
 export class BreakerYard {
   constructor() {
@@ -33,15 +36,20 @@ export class BreakerYard {
 
     for (const poi of this.mapDefinition.pois) {
       for (const zone of poi.lootZones) {
-        const highValueZone = ['rare', 'epic', 'legendary'].includes(zone.lootTier) ||
-          (zone.isHidden && poi.dangerLevel >= 4);
-        if (highValueZone && !zone.isLocked) {
+        // GOLD TOKEN = real cash, so it must be RARE. Candidates are restricted
+        // to explicitly flagged apex spots inside marked combat/HOT-ZONE POIs.
+        // Getting one requires winning a showdown at the highest-tier locations
+        // and then extracting cleanly.
+        const isGoldApex = zone.goldApex === true &&
+          (poi.combat === true || poi.dangerTier === 'hot' || poi.dangerTier === 'apex');
+        if (isGoldApex && !zone.isLocked) {
           goldTokenCandidates.push({
             x: zone.position.x,
             y: zone.position.y,
             z: zone.position.z,
             poi: poi.id,
             zone: zone.id,
+            apex: poi.dangerTier === 'apex',
           });
         }
         // Locked semantic loot remains visible but does not become a free
@@ -60,11 +68,15 @@ export class BreakerYard {
       }
     }
 
-    // Gold is intentionally much closer to a one-per-run objective than normal
-    // crate loot: rare, high-risk, and physically visible when it appears.
+    // Gold is intentionally much closer to a rare one-per-several-runs objective
+    // than normal crate loot: scarce, high-risk, and physically visible when it
+    // appears. At most one token spawns per run, only at a marked HOT ZONE apex,
+    // and the apex (dead-center reactor core) is preferred over secondary spots.
     const goldTokenSpawns = [];
-    if (goldTokenCandidates.length && Math.random() < 0.12) {
-      const pick = goldTokenCandidates[Math.floor(Math.random() * goldTokenCandidates.length)];
+    if (goldTokenCandidates.length && Math.random() < 0.08) {
+      const apexPicks = goldTokenCandidates.filter((c) => c.apex);
+      const pool = apexPicks.length ? apexPicks : goldTokenCandidates;
+      const pick = pool[Math.floor(Math.random() * pool.length)];
       goldTokenSpawns.push({
         pos: [pick.x, pick.y, pick.z],
         qty: 1,

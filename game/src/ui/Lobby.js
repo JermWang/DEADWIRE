@@ -9,6 +9,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { ASSETS, buildAsset, mat, mountWeaponToSocket, PALETTE } from '../assets.js';
 import { makeSky } from '../render/Sky.js';
+import { groundTexture } from '../render/textures.js';
 import { DistantBackdrop } from '../world/DistantBackdrop.js';
 import { disposeObjectTree } from '../render/dispose.js';
 import { Stash } from '../systems/Stash.js';
@@ -18,6 +19,61 @@ import { CORE_TIER_LIST, coreTierOdds, coreTokenRange, estimateCoreTokenValue, f
 
 const MAX_PARTY = 4;
 const MARKET_CATEGORIES = ['all', 'cores', 'cosmetics', 'weapons', 'resources'];
+const PARTY_MODE_LABELS = { 1: 'SOLO', 2: 'DUO', 3: 'TRIO', 4: 'SQUAD' };
+
+// Real /public artwork used for listings that are not single procedural meshes.
+const RESOURCE_IMAGES = {
+  'res-parts': '/silo-7.png',
+  'res-components': '/pods.png',
+  'res-shards': '/portal.png',
+  'res-gold': '/dead%20gold%20token.png',
+};
+
+// Colorable runner params exposed in the live locker (mirrors char_runner colors).
+const LOCKER_COLOR_FIELDS = [
+  { key: 'jacket', label: 'JACKET', swatches: ['#3b4a5a', '#8a4b3f', '#3e6b55', '#b28a3f', '#d9ddda', '#242a2e'] },
+  { key: 'pants', label: 'PANTS', swatches: ['#2b3137', '#4a3b2f', '#34423a', '#5a5048', '#1c2024', '#6b5436'] },
+  { key: 'boots', label: 'BOOTS', swatches: ['#23282c', '#3a2c24', '#2e3a32', '#4a4038', '#161a1d', '#7a6a4a'] },
+  { key: 'pack', label: 'PACK', swatches: ['#3a4046', '#6b4a3a', '#3e6b55', '#7a6038', '#d2d6d3', '#1f2327'] },
+  { key: 'accent', label: 'ACCENT', swatches: ['#f2a93b', '#5ee8ff', '#ff5a78', '#9c76ff', '#7dff9b', '#ffe14d'] },
+];
+
+// Lazy shared offscreen renderer that turns buildAsset(id) into cached thumbnail data URLs.
+let _thumbRenderer = null;
+const _thumbCache = new Map();
+function assetThumbnail(id, options, accent = '#5ee8ff') {
+  const cacheKey = `${id}::${JSON.stringify(options || {})}`;
+  if (_thumbCache.has(cacheKey)) return _thumbCache.get(cacheKey);
+  let dataUrl = '';
+  try {
+    if (!_thumbRenderer) {
+      _thumbRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+      _thumbRenderer.setSize(160, 160, false);
+      _thumbRenderer.setPixelRatio(1);
+      _thumbRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+      _thumbRenderer.toneMappingExposure = 1.18;
+    }
+    const scene = new THREE.Scene();
+    scene.add(new THREE.HemisphereLight(0xdfeaff, 0x202428, 2.0));
+    const key = new THREE.DirectionalLight(0xfff0d6, 2.6); key.position.set(2.5, 4, 3); scene.add(key);
+    const rim = new THREE.DirectionalLight(new THREE.Color(accent), 2.2); rim.position.set(-3, 2, -2); scene.add(rim);
+    const model = buildAsset(id, options);
+    scene.add(model);
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const radius = Math.max(size.x, size.y, size.z) * 0.5 || 1;
+    const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 100);
+    const dist = radius / Math.tan((35 * Math.PI / 180) / 2) * 1.35;
+    camera.position.set(center.x + dist * 0.55, center.y + dist * 0.42, center.z + dist);
+    camera.lookAt(center);
+    _thumbRenderer.render(scene, camera);
+    dataUrl = _thumbRenderer.domElement.toDataURL('image/png');
+    disposeObjectTree(scene);
+  } catch { dataUrl = ''; }
+  _thumbCache.set(cacheKey, dataUrl);
+  return dataUrl;
+}
 
 function makePartyCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -44,7 +100,7 @@ class PartyClient {
     this.ws.onmessage = (event) => {
       let message; try { message = JSON.parse(event.data); } catch { return; }
       if (message.t === 'lobby_roster') this.onRoster(message);
-      if (message.t === 'lobby_launch') this.onLaunch();
+      if (message.t === 'lobby_launch') this.onLaunch(message);
       if (message.t === 'lobby_error') {
         this.lastError = message.message || 'PARTY ERROR';
         this.onStatus(this.lastError);
@@ -77,6 +133,7 @@ export class Lobby {
     this.running = false;
     this.deploying = false;
     this.platforms = [];
+    this.practicalLights = [];
     this.page = 'lobby';
     this.social = { friends: [], incoming: [], outgoing: [], discord: [], results: [], message: '' };
     this.market = {
@@ -95,6 +152,8 @@ export class Lobby {
 
   _build() {
     const stash = Stash.load();
+    // Seed the working loadout from the saved profile so the lineup + locker reflect colors/cosmetics/weapon.
+    this._syncLoadoutFromProfile(stash.profile);
     this.el = document.createElement('div');
     this.el.className = 'lobby';
     this.el.innerHTML = `
@@ -124,9 +183,9 @@ export class Lobby {
           <input id="joinCode" maxlength="12" placeholder="ENTER PARTY CODE" />
           <button data-act="join">JOIN</button>
         </div>
-        <div class="social-rule"></div>
-        <div class="panel-kicker">RECENT RUNNERS</div>
-        <div class="recent-empty">Runners from online raids appear here.<br/>Share your party code to squad up.</div>
+        <div class="social-rule" id="recentRule"></div>
+        <div class="panel-kicker" id="recentKicker">RECENT RUNNERS</div>
+        <div class="recent-list" id="recentRunners"></div>
       </aside>
 
       <section class="market-panel glass" id="marketPanel" aria-label="Black market">
@@ -194,19 +253,25 @@ export class Lobby {
         <div class="search-results" id="friendResults"></div>
       </section>
 
-      <section class="lobby-page glass" id="loadoutPanel" aria-label="Loadout">
+      <section class="lobby-page glass locker-page" id="loadoutPanel" aria-label="Loadout">
         <div class="page-head">
-          <div><small>RUNNER CONFIGURATION</small><h2>LOADOUT</h2></div>
+          <div><small>RUNNER CONFIGURATION</small><h2>LOCKER</h2></div>
           <button data-act="lobby">CLOSE</button>
         </div>
-        <div class="loadout-page-grid">
-          <div>
+        <div class="locker-layout">
+          <div class="locker-viewport">
+            <canvas id="lockerCanvas"></canvas>
+            <div class="locker-viewport-hint">DRAG TO ROTATE</div>
+            <div class="locker-viewport-controls">
+              <button data-act="lockerSpin" id="lockerSpinBtn">SPIN: ON</button>
+              <button data-act="lockerReset">RESET VIEW</button>
+            </div>
+          </div>
+          <div class="locker-controls">
             <h3>FIELD KIT</h3>
             <div class="weapon-grid" id="weaponGrid"></div>
-            <h3>JACKET COLOR</h3>
-            <div class="tint-swatches" id="tintSwatches"></div>
-          </div>
-          <div>
+            <h3>COLORWAYS</h3>
+            <div class="color-fields" id="colorFields"></div>
             <h3>COSMETICS</h3>
             <div class="cosmetic-grid" id="cosmeticGrid"></div>
           </div>
@@ -233,9 +298,9 @@ export class Lobby {
       <aside class="lobby-command">
         <section class="mode-card glass">
           <div class="mode-art">
-            <span>CORE RUN</span>
+            <span id="modeKicker">CORE RUN</span>
             <b>BREAKER YARD</b>
-            <small>4 RUNNERS · PvPvE · 8 MIN</small>
+            <small id="modeLine">1 RUNNER · SOLO · 8 MIN</small>
           </div>
           <div class="mode-choices" aria-label="Game mode">
             <button data-act="setSolo" class="${this.online ? '' : 'on'}">
@@ -301,7 +366,7 @@ export class Lobby {
         this.el.querySelector('#partyStatus').textContent = status;
         this._renderReady();
       },
-      onLaunch: () => this._deploy(true),
+      onLaunch: (message) => this._deploy(true, message?.size),
     });
 
     this._initScene();
@@ -310,6 +375,7 @@ export class Lobby {
     this._renderLoadout();
     this._renderCareer();
     this._renderFriends();
+    this._renderRecentRunners();
     if (this.online) this.party.connect(this.partyCode, this.name);
   }
 
@@ -332,17 +398,22 @@ export class Lobby {
       return;
     }
     if (action === 'copy') {
-      const link = `${location.origin}${location.pathname}?party=${this.partyCode}`;
-      navigator.clipboard?.writeText(link);
-      this.el.querySelector('#partyStatus').textContent = 'INVITE LINK COPIED';
+      const ok = await this._copyInviteLink();
+      this.el.querySelector('#partyStatus').textContent = ok ? 'INVITE LINK COPIED' : `INVITE: ${this._inviteLink()}`;
       return;
     }
     if (action === 'join') {
-      const code = this.el.querySelector('#joinCode').value.trim().toUpperCase();
+      const input = this.el.querySelector('#joinCode');
+      // Accept a raw code or a pasted ?party=CODE invite link.
+      let code = (input?.value || '').trim();
+      const match = code.match(/[?&]party=([^&\s]+)/i);
+      if (match) code = decodeURIComponent(match[1]);
+      code = code.toUpperCase();
       if (!code) return;
       this.partyCode = code;
       this.online = true;
       this.localReady = false;
+      this._syncPartyUrl();
       this.party.connect(code, this.name);
       this._renderParty();
       return;
@@ -352,7 +423,7 @@ export class Lobby {
       if (nextOnline === this.online) return;
       this.online = nextOnline;
       this.localReady = false;
-      if (this.online) this.party.connect(this.partyCode, this.name);
+      if (this.online) { this._syncPartyUrl(); this.party.connect(this.partyCode, this.name); }
       else {
         this.party.disconnect();
         this.members = [{ id: 'local', name: this.name, ready: false, leader: true }];
@@ -426,9 +497,10 @@ export class Lobby {
       return;
     }
     if (action === 'friendInvite') {
-      const link = `${location.origin}${location.pathname}?party=${this.partyCode}`;
-      await navigator.clipboard?.writeText(link);
-      this._setSocialMessage(`PARTY INVITE COPIED FOR ${source.dataset.handle || 'FRIEND'}`);
+      const ok = await this._copyInviteLink();
+      this._setSocialMessage(ok
+        ? `PARTY INVITE COPIED FOR ${source.dataset.handle || 'FRIEND'}`
+        : `INVITE LINK: ${this._inviteLink()}`);
       return;
     }
     if (action === 'discordAdd') {
@@ -447,8 +519,18 @@ export class Lobby {
       this._selectWeapon(source.dataset.weaponId);
       return;
     }
-    if (action === 'setTint') {
-      this._setTint(source.dataset.tint);
+    if (action === 'setColor') {
+      this._setColor(source.dataset.colorKey, source.dataset.color);
+      return;
+    }
+    if (action === 'lockerSpin') {
+      this.lockerSpin = !this.lockerSpin;
+      source.textContent = `SPIN: ${this.lockerSpin ? 'ON' : 'OFF'}`;
+      return;
+    }
+    if (action === 'lockerReset') {
+      this.lockerYaw = 0.6;
+      this.lockerPitch = 0.05;
       return;
     }
     if (action === 'ready') this._ready();
@@ -503,6 +585,34 @@ export class Lobby {
       else this.market.watch.add(id);
       this._renderMarket();
     }
+  }
+
+  _inviteLink() {
+    return `${location.origin}${location.pathname}?party=${encodeURIComponent(this.partyCode)}`;
+  }
+
+  async _copyInviteLink() {
+    const link = this._inviteLink();
+    try {
+      if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(link); return true; }
+    } catch { /* fall through to legacy copy */ }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = link; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch { return false; }
+  }
+
+  _syncPartyUrl() {
+    // Keep the address bar's ?party= in sync so the page URL is itself a working invite.
+    try {
+      const url = new URL(location.href);
+      url.searchParams.set('party', this.partyCode);
+      history.replaceState(null, '', url);
+    } catch { /* noop */ }
   }
 
   _esc(value) {
@@ -585,7 +695,41 @@ export class Lobby {
         : `<button data-act="discordAdd" data-discord-id="${person.id}">INVITE</button>`)).join('')
       || '<div class="social-empty">No importable Discord friends. The Discord application must enable relationships access.</div>';
     this._renderFriendResults();
+    this._renderRecentRunners();
     this._setSocialMessage(this.social.message);
+  }
+
+  _renderRecentRunners() {
+    const list = this.el.querySelector('#recentRunners');
+    if (!list) return;
+    const kicker = this.el.querySelector('#recentKicker');
+    const rule = this.el.querySelector('#recentRule');
+    // Real data only: other party members + accepted friends. No fabricated samples.
+    const seen = new Set([this.name]);
+    const runners = [];
+    for (const member of this.members) {
+      if (!member || seen.has(member.name)) continue;
+      seen.add(member.name);
+      runners.push({ name: member.name, meta: member.leader ? 'PARTY LEADER' : 'IN YOUR PARTY' });
+    }
+    for (const friend of this.social.friends || []) {
+      const name = friend.handle || friend.username;
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      runners.push({ name, meta: friend.level ? `FRIEND · LV ${friend.level}` : 'FRIEND', avatar: friend.avatar });
+    }
+    const hasData = runners.length > 0;
+    if (kicker) kicker.style.display = hasData ? '' : 'none';
+    if (rule) rule.style.display = hasData ? '' : 'none';
+    list.style.display = hasData ? '' : 'none';
+    if (!hasData) { list.innerHTML = ''; return; }
+    list.innerHTML = runners.slice(0, 6).map((runner) => {
+      const initial = this._esc((runner.name || '?').slice(0, 1).toUpperCase());
+      return `<div class="recent-row">
+        ${runner.avatar ? `<img src="${this._esc(runner.avatar)}" alt="" />` : `<i>${initial}</i>`}
+        <span><b>${this._esc(runner.name)}</b><small>${this._esc(runner.meta)}</small></span>
+      </div>`;
+    }).join('');
   }
 
   _renderFriendResults() {
@@ -597,53 +741,92 @@ export class Lobby {
       : '';
   }
 
+  // Full runner colorway sourced from profile (legacy `tint` maps to jacket).
+  _lockerColors(stash = Stash.load()) {
+    return { jacket: stash.profile.tint, ...(stash.profile.colors || {}) };
+  }
+
+  // Keep this.loadout (consumed by _rebuildModels and onDeploy) in lockstep with the profile.
+  _syncLoadoutFromProfile(profile) {
+    this.loadout = {
+      ...profile.equipped,
+      _colors: { jacket: profile.tint, ...(profile.colors || {}) },
+      _primaryWeapon: profile.primaryWeapon,
+    };
+  }
+
   _renderLoadout() {
     const stash = Stash.load();
-    const weapons = [
-      { id: 'weapon_scrap_pistol', name: 'SCRAP PISTOL', detail: 'Reliable sidearm · balanced handling' },
-      { id: 'weapon_burst_rifle', name: 'BURST RIFLE', detail: 'Three-round pressure · medium range' },
-      { id: 'weapon_arc_shotgun', name: 'ARC SHOTGUN', detail: 'Wide discharge · close range' },
-    ];
+    const weapons = ASSETS.filter((asset) => asset.category === 'weapon');
     const weaponGrid = this.el.querySelector('#weaponGrid');
-    if (weaponGrid) weaponGrid.innerHTML = weapons.map((weapon) =>
-      `<button data-act="selectWeapon" data-weapon-id="${weapon.id}" class="${stash.profile.primaryWeapon === weapon.id ? 'selected' : ''}">
-        <b>${weapon.name}</b><span>${weapon.detail}</span><em>${stash.profile.primaryWeapon === weapon.id ? 'DEPLOY PRIMARY' : 'SET PRIMARY'}</em>
-      </button>`
-    ).join('');
-    const swatches = ['#3b4a5a', '#8a4b3f', '#3e6b55', '#b28a3f', '#d9ddda', '#242a2e'];
-    const tintTarget = this.el.querySelector('#tintSwatches');
-    if (tintTarget) tintTarget.innerHTML = swatches.map((tint) =>
-      `<button data-act="setTint" data-tint="${tint}" class="${stash.profile.tint === tint ? 'on' : ''}" style="--swatch:${tint}" aria-label="Use jacket color ${tint}"></button>`
-    ).join('');
+    if (weaponGrid) weaponGrid.innerHTML = weapons.map((weapon) => {
+      const selected = stash.profile.primaryWeapon === weapon.id;
+      const thumb = assetThumbnail(weapon.id, undefined, PALETTE.accentCyan);
+      return `<button data-act="selectWeapon" data-weapon-id="${weapon.id}" class="${selected ? 'selected' : ''}">
+        ${thumb ? `<u class="kit-thumb"><img src="${thumb}" alt="" /></u>` : ''}
+        <b>${this._esc(weapon.displayName)}</b><span>${this._esc(weapon.slot || 'weapon')} · field kit</span>
+        <em>${selected ? 'DEPLOY PRIMARY' : 'SET PRIMARY'}</em>
+      </button>`;
+    }).join('');
+
+    const colors = this._lockerColors(stash);
+    const colorFields = this.el.querySelector('#colorFields');
+    if (colorFields) colorFields.innerHTML = LOCKER_COLOR_FIELDS.map((field) => {
+      const current = (colors[field.key] || '').toLowerCase();
+      return `<div class="color-field">
+        <small>${field.label}</small>
+        <div class="tint-swatches">${field.swatches.map((hex) =>
+          `<button data-act="setColor" data-color-key="${field.key}" data-color="${hex}" class="${current === hex.toLowerCase() ? 'on' : ''}" style="--swatch:${hex}" aria-label="${field.label} ${hex}"></button>`
+        ).join('')}</div>
+      </div>`;
+    }).join('');
+
     const cosmetics = ASSETS.filter((asset) => asset.category === 'cosmetic');
     const grid = this.el.querySelector('#cosmeticGrid');
-    if (!grid) return;
-    grid.innerHTML = cosmetics.map((asset) => {
+    if (grid) grid.innerHTML = cosmetics.map((asset) => {
       const unlocked = Stash.isCosmeticUnlocked(asset, stash);
       const equipped = stash.profile.equipped?.[asset.slot] === asset.id;
       const unlock = asset.unlock ? `LV ${asset.unlock.level || 1} + ${asset.unlock.qty || 1} ${asset.unlock.item}` : 'STARTER ISSUE';
+      const thumb = assetThumbnail(asset.id, undefined, asset.rarity === 'rare' ? PALETTE.signalViolet : PALETTE.accentCyan);
       return `<button class="cosmetic-item ${equipped ? 'equipped' : ''}" data-act="equipCosmetic" data-asset-id="${asset.id}" ${unlocked ? '' : 'disabled'}>
-        <i></i><span><b>${this._esc(asset.displayName)}</b><small>${this._esc(asset.slot)} · ${this._esc(asset.rarity || 'common')}</small></span>
+        ${thumb ? `<i class="cosmetic-thumb"><img src="${thumb}" alt="" /></i>` : '<i></i>'}<span><b>${this._esc(asset.displayName)}</b><small>${this._esc(asset.slot)} · ${this._esc(asset.rarity || 'common')}</small></span>
         <em>${equipped ? 'EQUIPPED' : unlocked ? 'EQUIP' : unlock}</em>
       </button>`;
     }).join('');
+
+    this._initLocker();
+    this._rebuildLocker();
   }
 
   _equipCosmetic(assetId) {
     const asset = ASSETS.find((item) => item.id === assetId && item.category === 'cosmetic');
     const stash = Stash.load();
     if (!asset || !Stash.isCosmeticUnlocked(asset, stash)) return;
-    const equipped = { ...stash.profile.equipped, [asset.slot]: asset.id };
+    // Toggle: re-equipping the same slot item unequips it for live preview parity with the studio.
+    const current = stash.profile.equipped?.[asset.slot];
+    const equipped = { ...stash.profile.equipped, [asset.slot]: current === asset.id ? null : asset.id };
     const profile = Stash.saveProfile({ equipped });
-    this.loadout = { ...profile.equipped, _colors: { jacket: profile.tint } };
+    this._syncLoadoutFromProfile(profile);
     this._renderLoadout();
     this._rebuildModels();
   }
 
   _selectWeapon(weaponId) {
-    if (!['weapon_scrap_pistol', 'weapon_burst_rifle', 'weapon_arc_shotgun'].includes(weaponId)) return;
+    if (!ASSETS.some((asset) => asset.id === weaponId && asset.category === 'weapon')) return;
     const profile = Stash.saveProfile({ primaryWeapon: weaponId });
-    this.loadout = { ...this.loadout, _primaryWeapon: profile.primaryWeapon };
+    this._syncLoadoutFromProfile(profile);
+    this._renderLoadout();
+    this._rebuildModels();
+  }
+
+  _setColor(key, hex) {
+    if (!LOCKER_COLOR_FIELDS.some((field) => field.key === key)) return;
+    const stash = Stash.load();
+    const nextColors = { ...(stash.profile.colors || {}), [key]: hex };
+    // Mirror jacket into legacy `tint` so the lobby lineup and saved profile stay consistent.
+    const patch = key === 'jacket' ? { tint: hex, colors: nextColors } : { colors: nextColors };
+    const profile = Stash.saveProfile(patch);
+    this._syncLoadoutFromProfile(profile);
     this._renderLoadout();
     this._rebuildModels();
   }
@@ -767,8 +950,29 @@ export class Lobby {
         low,
         high,
         color: tier.color,
+        assetId: 'obj_unstable_core',
+        assetOptions: { variant: 'carry', tier: { id: tier.id, rarity: (tier.grade || 'regular').toLowerCase() } },
         tags: ['extractable', 'vault', 'open market'],
         detail: `${tier.item} · ${tier.shardYield + mods.shardBonus} shard yield`,
+      };
+    });
+    const weaponDefs = ASSETS.filter((asset) => asset.category === 'weapon');
+    const weapons = weaponDefs.map((asset, index) => {
+      const value = 46_000 + index * 64_000;
+      const equipped = stash.profile.primaryWeapon === asset.id;
+      return {
+        id: `weapon-${asset.id}`,
+        title: asset.displayName,
+        category: 'weapons',
+        grade: (asset.rarity || 'standard').toUpperCase(),
+        owned: equipped ? 1 : 0,
+        value,
+        low: Math.round(value * 0.7),
+        high: Math.round(value * 1.45),
+        color: PALETTE.accentCyan,
+        assetId: asset.id,
+        tags: [asset.slot || 'weapon', 'field kit'],
+        detail: `${asset.slot || 'weapon'} · ${equipped ? 'equipped primary' : 'tradeable'}`,
       };
     });
     const cosmetics = ASSETS
@@ -786,16 +990,46 @@ export class Lobby {
           low: Math.round(value * 0.74),
           high: Math.round(value * 1.38),
           color: asset.rarity === 'rare' ? PALETTE.signalViolet : asset.rarity === 'uncommon' ? PALETTE.warningAmber : PALETTE.accentCyan,
+          assetId: asset.id,
           tags: [asset.slot || 'universal', asset.rarity || 'common', asset.tier || 'starter'],
           detail: `${asset.slot || 'cosmetic'} · universal fit`,
         };
       });
-    const resources = [
-      { id: 'res-parts', title: 'Machine Parts Bundle', category: 'resources', grade: 'MATERIAL', owned: stash.items?.Parts || 0, value: 28_000, low: 18_000, high: 44_000, color: PALETTE.warningAmber, tags: ['weapons', 'crafting'], detail: 'Upgrade feedstock' },
-      { id: 'res-components', title: 'Component Crate', category: 'resources', grade: 'MATERIAL', owned: stash.items?.Components || 0, value: 36_000, low: 22_000, high: 60_000, color: PALETTE.accentCyan, tags: ['base', 'crafting'], detail: 'Base and gear upgrades' },
-      { id: 'res-shards', title: 'Core Shard Lot', category: 'resources', grade: 'RARE', owned: stash.items?.['Core Shard'] || 0, value: 95_000, low: 62_000, high: 145_000, color: PALETTE.toxic, tags: ['reactor', 'crafting'], detail: 'Used for high-end crafting' },
+    // Resource listings derived from the live economy item catalog (no hardcoded mock arrays).
+    const resourceCatalog = [
+      { id: 'res-gold', title: '$DEAD Gold Token', item: 'Gold', grade: 'CURRENCY', value: 100_000, color: PALETTE.warningAmber, tags: ['currency', 'open market'], detail: 'Premium settlement token' },
+      { id: 'res-parts', title: 'Machine Parts Bundle', item: 'Parts', grade: 'MATERIAL', value: 28_000, color: PALETTE.warningAmber, tags: ['weapons', 'crafting'], detail: 'Weapon upgrade feedstock' },
+      { id: 'res-components', title: 'Component Crate', item: 'Components', grade: 'MATERIAL', value: 36_000, color: PALETTE.accentCyan, tags: ['base', 'crafting'], detail: 'Base and gear upgrades' },
+      { id: 'res-shards', title: 'Core Shard Lot', item: 'Core Shard', grade: 'RARE', value: 95_000, color: PALETTE.toxic, tags: ['reactor', 'crafting'], detail: 'High-end crafting reagent' },
     ];
-    return [...cores, ...cosmetics, ...resources];
+    const resources = resourceCatalog.map((res) => ({
+      id: res.id,
+      title: res.title,
+      category: 'resources',
+      grade: res.grade,
+      owned: stash.items?.[res.item] || 0,
+      value: res.value,
+      low: Math.round(res.value * 0.66),
+      high: Math.round(res.value * 1.6),
+      color: res.color,
+      image: RESOURCE_IMAGES[res.id],
+      tags: res.tags,
+      detail: res.detail,
+    }));
+    return [...cores, ...weapons, ...cosmetics, ...resources];
+  }
+
+  _listingThumb(listing) {
+    // Resource/token listings use real /public artwork.
+    if (listing.image) {
+      return `<i class="market-thumb"><img src="${this._esc(listing.image)}" alt="" loading="lazy" /></i>`;
+    }
+    // Procedural cores/weapons/cosmetics render a live Three.js thumbnail.
+    if (listing.assetId) {
+      const url = assetThumbnail(listing.assetId, listing.assetOptions, listing.color);
+      if (url) return `<i class="market-thumb"><img src="${url}" alt="" /></i>`;
+    }
+    return '<i></i>';
   }
 
   _renderMarket() {
@@ -828,7 +1062,7 @@ export class Lobby {
       return `
         <article class="market-card" style="--accent:${listing.color}">
           <div class="market-card-top">
-            <i></i>
+            ${this._listingThumb(listing)}
             <div>${owned}<b>${listing.grade}</b></div>
           </div>
           <h3>${listing.title}</h3>
@@ -855,12 +1089,16 @@ export class Lobby {
     this._renderReady();
   }
 
-  _deploy(online) {
+  _deploy(online, size) {
     if (this.deploying) return;
     this.deploying = true;
     const loadout = { ...this.loadout };
+    // Party size drives the mode (1 SOLO / 2 DUO / 3 TRIO / 4 SQUAD). Solo defaults to 1.
+    const partySize = online
+      ? Math.max(1, Math.min(MAX_PARTY, Number(size) || this._partySize()))
+      : 1;
     this.destroy();
-    this.onDeploy(loadout, online, this.name);
+    this.onDeploy(loadout, online, this.name, partySize);
   }
 
   _renderParty() {
@@ -882,12 +1120,31 @@ export class Lobby {
     }
 
     const labels = this.el.querySelector('#stageLabels');
-    labels.innerHTML = this.members.map((member, index) =>
-      `<div data-slot="${index}" class="${member.ready ? 'ready' : ''}"><b>${member.name}</b><span>${member.ready ? 'READY' : member.leader ? 'LEADER' : 'NOT READY'}</span></div>`
-    ).join('');
+    labels.innerHTML = Array.from({ length: MAX_PARTY }, (_, index) => {
+      const member = this.members[index];
+      return member
+        ? `<div data-slot="${index}" class="slot-label occupied ${member.ready ? 'ready' : ''}"><b>${this._esc(member.name)}</b><span>${member.ready ? 'READY' : member.leader ? 'LEADER' : 'NOT READY'}</span></div>`
+        : `<div data-slot="${index}" class="slot-label empty"><button data-act="copy" title="Copy party invite"><i>+</i><span>INVITE</span></button></div>`;
+    }).join('');
 
+    this._renderModeLabel();
+    this._renderRecentRunners();
     this._rebuildModels();
     this._renderReady();
+  }
+
+  _partySize() {
+    if (!this.online) return 1;
+    return Math.max(1, Math.min(MAX_PARTY, this.members.length || 1));
+  }
+
+  _renderModeLabel() {
+    const size = this._partySize();
+    const label = PARTY_MODE_LABELS[size] || 'SQUAD';
+    const line = this.el.querySelector('#modeLine');
+    if (line) line.textContent = `${size} RUNNER${size === 1 ? '' : 'S'} · ${label} · 8 MIN`;
+    const kicker = this.el.querySelector('#modeKicker');
+    if (kicker) kicker.textContent = `${label} RUN`;
   }
 
   _renderReady() {
@@ -902,7 +1159,8 @@ export class Lobby {
     const me = this.members.find((member) => member.name === this.name);
     const leader = me?.leader ?? true;
     const allReady = this.members.length > 0 && this.members.every((member) => member.ready);
-    if (this.localReady && leader && allReady) button.textContent = 'DEPLOY SQUAD';
+    const modeLabel = PARTY_MODE_LABELS[this._partySize()] || 'SQUAD';
+    if (this.localReady && leader && allReady) button.textContent = `DEPLOY ${modeLabel}`;
     else if (this.localReady) button.textContent = leader ? 'WAITING FOR SQUAD' : 'CANCEL READY';
     else button.textContent = 'READY UP';
     button.className = `ready-btn ${this.localReady ? 'is-ready' : ''}`;
@@ -916,14 +1174,14 @@ export class Lobby {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.32;
+    this.renderer.toneMappingExposure = 1.2;
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(0x687872, 20, 96);
+    this.scene.fog = new THREE.FogExp2(0x11191e, 0.032);
     try {
       const pmrem = new THREE.PMREMGenerator(this.renderer);
       this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     } catch { /* optional lobby reflections */ }
-    this.scene.add(makeSky({ top: '#172733', horizon: '#6f695a' }));
+    this.scene.add(makeSky({ top: '#0f2029', horizon: '#746958' }));
     this.camera = new THREE.PerspectiveCamera(34, 1, 0.1, 300);
     this.camera.position.set(0.35, 3.05, 11.8);
     this.camera.lookAt(0, 1.35, -1.2);
@@ -931,13 +1189,19 @@ export class Lobby {
       min: { x: -42, z: -30 },
       max: { x: 42, z: 30 },
     });
-    this.backdrop.root.position.y = -2.1;
+    this.backdrop.root.position.y = -2.55;
     this.scene.add(this.backdrop.root);
 
-    this.scene.add(new THREE.HemisphereLight(0xcde8ff, 0x41352d, 2.5));
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.42));
-    const key = new THREE.DirectionalLight(0xffe4bd, 3.4); key.position.set(4, 7, 5); this.scene.add(key);
-    const rim = new THREE.DirectionalLight(0x5ee8ff, 2.8); rim.position.set(-5, 3, -4); this.scene.add(rim);
+    this.scene.add(new THREE.HemisphereLight(0xcde8ff, 0x2b241d, 1.72));
+    this.scene.add(new THREE.AmbientLight(0xcfd8d0, 0.22));
+    const key = new THREE.DirectionalLight(0xffddb0, 3.1); key.position.set(4, 7, 5); this.scene.add(key);
+    const rim = new THREE.DirectionalLight(0x5ee8ff, 3.4); rim.position.set(-5, 3, -4); this.scene.add(rim);
+    const amberBacklight = new THREE.PointLight(0xffb84f, 14, 22, 2);
+    amberBacklight.position.set(0, 2.1, -6.4);
+    this.scene.add(amberBacklight);
+    const cyanBacklight = new THREE.PointLight(0x7ee8ff, 6.5, 18, 2);
+    cyanBacklight.position.set(-4.2, 2.4, -5.8);
+    this.scene.add(cyanBacklight);
 
     this.partyRoot = new THREE.Group();
     this.scene.add(this.partyRoot);
@@ -962,7 +1226,7 @@ export class Lobby {
       platform.userData.model = model;
       platform.userData.ring = ring;
       platform.userData.baseY = platform.position.y;
-      platform.visible = false;
+      platform.visible = true;
       this.partyRoot.add(platform);
       this.platforms.push(platform);
     }
@@ -972,7 +1236,7 @@ export class Lobby {
     const w = canvas.clientWidth || 1280, h = canvas.clientHeight || 720;
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.72, 0.7, 0.78));
+    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.58, 0.54, 0.82));
     this.composer.addPass(new OutputPass());
     this.running = true;
     this.clock = new THREE.Clock();
@@ -988,47 +1252,154 @@ export class Lobby {
     return asset;
   }
 
+  _addPracticalLight(x, y, z, {
+    color = 0xffc46a, intensity = 7, distance = 10, vertical = false, phase = 0, rotationY = 0,
+  } = {}) {
+    const fixture = new THREE.Group();
+    fixture.position.set(x, y, z);
+    fixture.rotation.y = rotationY;
+    const shellMat = mat('#10171b', { metal: 0.72, rough: 0.56 });
+    const glowColor = new THREE.Color(color);
+    const tubeMat = new THREE.MeshStandardMaterial({
+      color: glowColor,
+      emissive: glowColor,
+      emissiveIntensity: 3.2,
+      roughness: 0.24,
+    });
+    const shell = new THREE.Mesh(
+      new THREE.BoxGeometry(vertical ? 0.18 : 0.94, vertical ? 1.12 : 0.18, 0.16),
+      shellMat,
+    );
+    const tube = new THREE.Mesh(
+      new THREE.BoxGeometry(vertical ? 0.07 : 0.76, vertical ? 0.9 : 0.07, 0.08),
+      tubeMat,
+    );
+    tube.position.z = 0.055;
+    const light = new THREE.PointLight(color, intensity, distance, 2);
+    light.position.z = 0.26;
+    fixture.add(shell, tube, light);
+    fixture.userData.practical = { light, tube, intensity, phase };
+    this.practicalLights.push(fixture.userData.practical);
+    this.setRoot.add(fixture);
+    return fixture;
+  }
+
   _buildSetDressing() {
     this.setRoot = new THREE.Group();
     this.setRoot.name = 'lobby_breaker_yard_set';
     this.scene.add(this.setRoot);
 
+    const yardTexture = groundTexture('#303e38', 9);
     const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(8.4, 18),
-      mat('#35443c', { rough: 0.95 }),
+      new THREE.PlaneGeometry(20, 24, 1, 1),
+      new THREE.MeshStandardMaterial({
+        color: 0x58614f,
+        roughness: 0.98,
+        metalness: 0.04,
+        map: yardTexture,
+      }),
     );
     floor.rotation.x = -Math.PI / 2;
-    floor.position.set(0, -0.09, -0.25);
+    floor.position.set(0, -0.1, -5.1);
     floor.receiveShadow = true;
     this.setRoot.add(floor);
 
+    const grid = new THREE.GridHelper(20, 20, 0x60746c, 0x1a2526);
+    grid.position.set(0, -0.075, -5.1);
+    grid.material.transparent = true;
+    grid.material.opacity = 0.24;
+    this.setRoot.add(grid);
+
+    const wallMat = mat('#11191d', { metal: 0.68, rough: 0.72 });
+    const wallDark = mat('#0b1114', { metal: 0.64, rough: 0.78 });
+    const rearWall = new THREE.Mesh(new THREE.BoxGeometry(19, 8.4, 0.36), wallMat);
+    rearWall.position.set(0, 3.55, -13.25);
+    this.setRoot.add(rearWall);
+    for (const x of [-8.6, -5.2, -1.8, 1.8, 5.2, 8.6]) {
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.26, 7.2, 0.5), wallDark);
+      rib.position.set(x, 3.12, -13.02);
+      this.setRoot.add(rib);
+    }
+    for (const x of [-9.8, 9.8]) {
+      const sideWall = new THREE.Mesh(new THREE.BoxGeometry(0.32, 6.6, 17), wallDark);
+      sideWall.position.set(x, 2.8, -6.2);
+      this.setRoot.add(sideWall);
+    }
+    const gantryMat = mat('#202a2e', { metal: 0.6, rough: 0.58 });
+    for (const y of [3.1, 4.2]) {
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(14.8, 0.18, 0.24), gantryMat);
+      beam.position.set(0, y, -8.8);
+      this.setRoot.add(beam);
+    }
+    for (const x of [-6.6, 6.6]) {
+      const upright = new THREE.Mesh(new THREE.BoxGeometry(0.22, 3.1, 0.22), gantryMat);
+      upright.position.set(x, 1.45, -8.8);
+      this.setRoot.add(upright);
+    }
+
     for (const [x, z, s, lush] of [
-      [-3.9, 1.2, 1.1, 0.58],
-      [3.8, 0.9, 1.0, 0.52],
-      [-2.2, -2.2, 0.78, 0.42],
-      [2.6, -2.5, 0.72, 0.44],
-      [0, 2.5, 0.9, 0.48],
+      [-5.8, -2.7, 0.92, 0.58],
+      [5.6, -2.9, 0.82, 0.52],
+      [-3.8, -5.1, 0.86, 0.45],
+      [3.9, -5.4, 0.76, 0.44],
+      [-1.5, -7.0, 0.62, 0.38],
+      [1.8, -7.25, 0.72, 0.48],
     ]) {
       this._placeSet('rough_grass_patch', x, -0.07, z, s, 0, { lushness: lush });
     }
 
-    this._placeSet('evergreen_tree', -5.7, -0.08, -2.0, 0.92, -0.25, { height: 5.8 });
-    this._placeSet('evergreen_tree', 5.4, -0.08, -1.35, 0.76, 0.34, { height: 5.1, dead: true });
-    this._placeSet('dead_shrub', -4.6, -0.05, 1.6, 1.25, 0.2);
-    this._placeSet('dead_shrub', 4.5, -0.05, 1.35, 1.0, -0.6, { green: true });
-    this._placeSet('scrap_wall', -4.15, 0, -3.3, 0.72, 0.18, { length: 4.2, height: 1.15 });
-    this._placeSet('barrier', 4.0, 0, -3.1, 0.78, -0.28, { length: 3.2 });
-    this._placeSet('prop_loot_crate', -2.95, 0.02, 1.95, 0.82, 0.4);
-    this._placeSet('prop_loot_crate', 3.05, 0.02, 2.15, 0.72, -0.35);
-    this._placeSet('fuel_tank', -5.4, 0.02, 2.75, 0.5, Math.PI / 2);
-    this._placeSet('pipe_run', 5.2, 0.02, 2.85, 0.58, Math.PI / 2, { length: 5.4 });
-    this._placeSet('market_stall', 0, 0.02, 3.55, 0.64, Math.PI, { color: '#8a4b9f' });
-    const tower = this._placeSet('light_tower', -6.5, 0, 1.2, 0.8, -0.2);
-    const lamp = new THREE.SpotLight(0xbaf4ff, 7.2, 18, 0.45, 0.8, 2);
-    lamp.position.set(-5.2, 5.2, 1.2);
-    lamp.target.position.set(0, 0.9, -0.4);
+    this._placeSet('reactor_tower', 0, -0.02, -11.2, 1.42, 0.22);
+    this._placeSet('obj_unstable_core', 0, 1.03, -8.55, 1.15, 0.38, {
+      variant: 'carry',
+      tier: { id: 'yellow', rarity: 'regular' },
+    });
+    this._placeSet('rail_track', 0, -0.02, -5.9, 1.1);
+    this._placeSet('generator', -4.95, 0, -6.4, 0.95, 0.2);
+    this._placeSet('generator', 4.95, 0, -6.65, 0.9, -0.16);
+    this._placeSet('server_rack', -6.4, 0, -9.4, 0.82, Math.PI / 2);
+    this._placeSet('server_rack', 6.35, 0, -9.15, 0.82, -Math.PI / 2);
+    this._placeSet('vent', -5.85, 0, -4.0, 0.72, 0.24);
+    this._placeSet('vent', 5.75, 0, -4.25, 0.72, -0.22);
+    this._placeSet('evergreen_tree', -7.35, -0.08, -3.8, 0.72, -0.25, { height: 5.4 });
+    this._placeSet('evergreen_tree', 7.15, -0.08, -3.65, 0.62, 0.34, { height: 4.8, dead: true });
+    this._placeSet('dead_shrub', -6.0, -0.05, -2.7, 0.95, 0.2);
+    this._placeSet('dead_shrub', 6.1, -0.05, -2.85, 0.88, -0.6, { green: true });
+    this._placeSet('scrap_wall', -5.5, 0, -3.6, 0.68, 0.1, { length: 3.8, height: 1.15 });
+    this._placeSet('barrier', 5.25, 0, -3.9, 0.7, -0.22, { length: 3.2 });
+    this._placeSet('prop_loot_crate', -4.25, 0.02, -4.7, 0.64, 0.4);
+    this._placeSet('prop_loot_crate', 4.35, 0.02, -4.95, 0.6, -0.35);
+    this._placeSet('fuel_tank', -7.1, 0.02, -6.0, 0.5, Math.PI / 2);
+    this._placeSet('pipe_run', 7.1, 0.02, -6.3, 0.58, Math.PI / 2, { length: 5.4 });
+    this._placeSet('pipe_run', -5.4, 3.55, -8.55, 1.05, Math.PI / 2, { length: 7.6 });
+    this._placeSet('pipe_run', 5.4, 4.22, -9.9, 1.15, Math.PI / 2, { length: 7.2 });
+    this._placeSet('market_stall', 0, 0.02, -7.1, 0.56, Math.PI, { color: '#8a4b9f' });
+    const tower = this._placeSet('light_tower', -7.65, 0, -4.2, 0.75, -0.2);
+    this._placeSet('light_tower', 7.4, 0, -4.9, 0.68, 0.16);
+
+    this._addPracticalLight(-5.9, 3.1, -3.5, { color: 0xffc46a, intensity: 8, distance: 11, phase: 0.4, rotationY: 0.2 });
+    this._addPracticalLight(5.9, 3.5, -4.2, { color: 0xeafcff, intensity: 7.5, distance: 12, vertical: true, phase: 1.2, rotationY: -0.12 });
+    this._addPracticalLight(-3.4, 4.6, -12.72, { color: 0xf7fbf2, intensity: 6.2, distance: 12, phase: 2.4 });
+    this._addPracticalLight(3.4, 4.6, -12.72, { color: 0xffb84f, intensity: 7.4, distance: 12, phase: 3.1 });
+
+    const lamp = new THREE.SpotLight(0xbaf4ff, 8.8, 22, 0.42, 0.8, 2);
+    lamp.position.set(-5.6, 5.2, -3.9);
+    lamp.target.position.set(0, 0.85, -1.9);
     this.setRoot.add(lamp, lamp.target);
     tower.add(new THREE.PointLight(0xffc46a, 1.8, 5, 2));
+
+    const dustGeometry = new THREE.BufferGeometry();
+    const dust = new Float32Array(180 * 3);
+    for (let i = 0; i < 180; i++) {
+      dust[i * 3] = (Math.random() - 0.5) * 15;
+      dust[i * 3 + 1] = 0.25 + Math.random() * 5.4;
+      dust[i * 3 + 2] = -1.5 - Math.random() * 12.5;
+    }
+    dustGeometry.setAttribute('position', new THREE.BufferAttribute(dust, 3));
+    this.lobbyDust = new THREE.Points(
+      dustGeometry,
+      new THREE.PointsMaterial({ color: 0xa9c0ba, size: 0.024, transparent: true, opacity: 0.26 }),
+    );
+    this.setRoot.add(this.lobbyDust);
   }
 
   _updateResponsiveCamera(w, h) {
@@ -1047,14 +1418,14 @@ export class Lobby {
     if (!labelRect.width || !labelRect.height) return;
     this._labelWorld = this._labelWorld || new THREE.Vector3();
     this.platforms.forEach((platform, index) => {
-      if (!platform.visible) return;
       const label = labels.querySelector(`[data-slot="${index}"]`);
       if (!label) return;
-      this._labelWorld.set(0, 0.22, 0);
+      const empty = label.classList.contains('empty');
+      this._labelWorld.set(0, empty ? 0.5 : 0.22, 0);
       platform.localToWorld(this._labelWorld);
       this._labelWorld.project(this.camera);
       const x = (this._labelWorld.x * 0.5 + 0.5) * canvasRect.width + canvasRect.left - labelRect.left;
-      const y = (-this._labelWorld.y * 0.5 + 0.5) * canvasRect.height + canvasRect.top - labelRect.top + 72 * platform.scale.x;
+      const y = (-this._labelWorld.y * 0.5 + 0.5) * canvasRect.height + canvasRect.top - labelRect.top + (empty ? -46 : 72) * platform.scale.x;
       label.style.transform = `translate(${x}px, ${y}px) translate(-50%, 0)`;
     });
   }
@@ -1062,32 +1433,29 @@ export class Lobby {
   _rebuildModels() {
     if (!this.platforms.length) return;
     const tints = ['#2f78b7', '#7c4353', '#3f7658', '#8a6a38'];
-    const layouts = {
-      1: [{ x: 0, z: 0.2, scale: 1.08 }],
-      2: [{ x: -1.12, z: 0.24, scale: 1.04 }, { x: 1.12, z: 0.24, scale: 1.04 }],
-      3: [{ x: -1.85, z: -0.3, scale: 0.96 }, { x: 0, z: 0.4, scale: 1.05 }, { x: 1.85, z: -0.3, scale: 0.96 }],
-      4: [
-        { x: -1.12, z: 0.38, scale: 1.04 },
-        { x: 1.12, z: 0.38, scale: 1.02 },
-        { x: -2.32, z: -1.18, scale: 0.94 },
-        { x: 2.32, z: -1.18, scale: 0.94 },
-      ],
-    };
-    const activeLayouts = layouts[Math.max(1, Math.min(MAX_PARTY, this.members.length))];
+    const activeLayouts = [
+      { x: 0, z: 0.38, scale: 1.08 },
+      { x: -1.95, z: -0.5, scale: 0.92 },
+      { x: 1.95, z: -0.5, scale: 0.92 },
+      { x: 3.05, z: -1.38, scale: 0.8 },
+    ];
     for (let i = 0; i < this.platforms.length; i++) {
       const slot = this.platforms[i].userData.model;
       disposeObjectTree(slot);
       slot.clear();
       const member = this.members[i];
-      this.platforms[i].visible = Boolean(member);
-      if (!member) continue;
       const layout = activeLayouts[i];
       this.platforms[i].position.set(layout.x, -0.05, layout.z);
       this.platforms[i].scale.setScalar(layout.scale);
       this.platforms[i].userData.baseY = -0.05;
-      this.platforms[i].userData.ring.material.emissiveIntensity = member?.ready ? 3.4 : member ? 1.7 : 0.7;
-      const localColors = i === 0 ? this.loadout._colors : null;
-      const runner = buildAsset('char_runner', { pose: 'aim', colors: { jacket: localColors?.jacket || tints[i] } });
+      this.platforms[i].visible = true;
+      this.platforms[i].userData.occupied = Boolean(member);
+      this.platforms[i].userData.ring.material.emissiveIntensity = member?.ready ? 3.4 : member ? 1.7 : 0.52;
+      this.platforms[i].userData.ring.material.opacity = member ? 1 : 0.54;
+      this.platforms[i].userData.ring.material.transparent = !member;
+      if (!member) continue;
+      const localColors = i === 0 ? (this.loadout._colors || {}) : null;
+      const runner = buildAsset('char_runner', { pose: 'aim', colors: localColors ? { jacket: tints[i], ...localColors } : { jacket: tints[i] } });
       const hand = runner.getObjectByName(runner.userData.weaponSocketName || 'hand_r') || runner;
       mountWeaponToSocket(buildAsset(i === 0 ? (this.loadout._primaryWeapon || 'weapon_scrap_pistol') : 'weapon_scrap_pistol'), hand);
       if (i === 0) {
@@ -1100,6 +1468,134 @@ export class Lobby {
       runner.scale.setScalar(0.92);
       slot.add(runner);
     }
+  }
+
+  // --- Live visual locker: isolated viewport mirroring the asset studio ---
+  _initLocker() {
+    if (this.locker) return;
+    const canvas = this.el.querySelector('#lockerCanvas');
+    if (!canvas) return;
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    const scene = new THREE.Scene();
+    try {
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    } catch { /* optional reflections */ }
+    scene.add(new THREE.HemisphereLight(0xdfeaff, 0x20262b, 1.9));
+    const key = new THREE.DirectionalLight(0xfff0d6, 3.0); key.position.set(3, 5, 4); scene.add(key);
+    const rim = new THREE.DirectionalLight(0x6ee8ff, 2.6); rim.position.set(-4, 3, -3); scene.add(rim);
+    const fill = new THREE.PointLight(0xffc46a, 6, 14, 2); fill.position.set(0, 2, 4); scene.add(fill);
+    const pedestal = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.62, 0.78, 0.18, 36),
+      mat(PALETTE.steelDark, { metal: 0.45, rough: 0.5 }),
+    );
+    pedestal.position.y = -0.09; scene.add(pedestal);
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.66, 0.02, 6, 40),
+      mat(PALETTE.coreGlow, { emissive: PALETTE.coreGlow, emissiveIntensity: 2.2 }),
+    );
+    ring.rotation.x = Math.PI / 2; ring.position.y = 0.0; scene.add(ring);
+    const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 100);
+    const pivot = new THREE.Group(); scene.add(pivot);
+
+    this.lockerYaw = 0.6;
+    this.lockerPitch = 0.05;
+    this.lockerSpin = true;
+    this.lockerDist = 5;
+    this.lockerTargetY = 1;
+    this.locker = { renderer, scene, camera, pivot, canvas, running: true };
+
+    // Drag-to-orbit.
+    let dragging = false, lastX = 0, lastY = 0;
+    const down = (e) => {
+      dragging = true; this.lockerSpin = false;
+      const spinBtn = this.el.querySelector('#lockerSpinBtn');
+      if (spinBtn) spinBtn.textContent = 'SPIN: OFF';
+      const p = e.touches ? e.touches[0] : e;
+      lastX = p.clientX; lastY = p.clientY;
+    };
+    const move = (e) => {
+      if (!dragging) return;
+      const p = e.touches ? e.touches[0] : e;
+      this.lockerYaw += (p.clientX - lastX) * 0.01;
+      this.lockerPitch = Math.max(-0.6, Math.min(0.9, this.lockerPitch + (p.clientY - lastY) * 0.006));
+      lastX = p.clientX; lastY = p.clientY;
+      if (e.cancelable) e.preventDefault();
+    };
+    const up = () => { dragging = false; };
+    canvas.addEventListener('pointerdown', down);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    this._lockerHandlers = { down, move, up };
+
+    this._lockerLoop();
+  }
+
+  _rebuildLocker() {
+    if (!this.locker) return;
+    const pivot = this.locker.pivot;
+    disposeObjectTree(pivot);
+    pivot.clear();
+    const colors = this._lockerColors();
+    const runner = buildAsset('char_runner', { pose: 'aim', colors });
+    const hand = runner.getObjectByName(runner.userData.weaponSocketName || 'hand_r') || runner;
+    mountWeaponToSocket(buildAsset(this.loadout._primaryWeapon || Stash.load().profile.primaryWeapon || 'weapon_scrap_pistol'), hand);
+    const equipped = this.loadout || {};
+    for (const [socketName, id] of Object.entries(equipped)) {
+      if (socketName.startsWith('_') || !id) continue;
+      (runner.getObjectByName(socketName) || runner).add(buildAsset(id));
+    }
+    pivot.add(runner);
+    this._frameLocker(runner);
+  }
+
+  _frameLocker(model) {
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const radius = Math.max(size.x, size.y, size.z) * 0.5 || 1;
+    this.lockerTargetY = center.y;
+    this.lockerDist = radius / Math.tan((38 * Math.PI / 180) / 2) * 1.5;
+  }
+
+  _lockerLoop() {
+    if (!this.locker?.running) return;
+    requestAnimationFrame(() => this._lockerLoop());
+    const { renderer, scene, camera, canvas, pivot } = this.locker;
+    const w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
+    if (canvas.width !== w || canvas.height !== h) {
+      renderer.setSize(w, h, false);
+      camera.aspect = w / Math.max(1, h);
+      camera.updateProjectionMatrix();
+    }
+    if (this.lockerSpin) this.lockerYaw += 0.008;
+    const dist = this.lockerDist;
+    camera.position.set(
+      Math.sin(this.lockerYaw) * Math.cos(this.lockerPitch) * dist,
+      this.lockerTargetY + Math.sin(this.lockerPitch) * dist,
+      Math.cos(this.lockerYaw) * Math.cos(this.lockerPitch) * dist,
+    );
+    camera.lookAt(0, this.lockerTargetY, 0);
+    const time = performance.now() * 0.001;
+    pivot.traverse((object) => { if (object.userData?.updateIdle) object.userData.updateIdle(time, 0.9); });
+    renderer.render(scene, camera);
+  }
+
+  _destroyLocker() {
+    if (!this.locker) return;
+    this.locker.running = false;
+    const h = this._lockerHandlers;
+    if (h) {
+      this.locker.canvas.removeEventListener('pointerdown', h.down);
+      window.removeEventListener('pointermove', h.move);
+      window.removeEventListener('pointerup', h.up);
+    }
+    try { disposeObjectTree(this.locker.scene); } catch { /* noop */ }
+    try { this.locker.renderer.dispose(); } catch { /* noop */ }
+    this.locker = null;
   }
 
   _loop() {
@@ -1117,6 +1613,19 @@ export class Lobby {
     this._updateResponsiveCamera(w, h);
     const time = performance.now() * 0.001;
     this.backdrop?.update(time);
+    if (this.lobbyDust) {
+      this.lobbyDust.rotation.y = Math.sin(time * 0.08) * 0.04;
+      this.lobbyDust.position.y = Math.sin(time * 0.18) * 0.08;
+    }
+    this.setRoot?.traverse((object) => {
+      if (object.userData?.updateIdle) object.userData.updateIdle(time, 0.86);
+    });
+    this.practicalLights.forEach((fixture, index) => {
+      const flutter = Math.sin(time * (6.4 + index * 0.55) + fixture.phase);
+      const pulse = flutter > 0.9 ? 0.58 : 1;
+      fixture.light.intensity = fixture.intensity * pulse;
+      fixture.tube.material.emissiveIntensity = 2.5 + pulse * 1.25;
+    });
     this.platforms.forEach((platform, index) => {
       platform.position.y = platform.userData.baseY + Math.sin(time * 1.25 + index * 0.8) * 0.055;
       const model = platform.userData.model;
@@ -1129,6 +1638,7 @@ export class Lobby {
 
   destroy() {
     this.running = false;
+    this._destroyLocker();
     this.party?.disconnect();
     disposeObjectTree(this.scene);
     try { this.composer?.dispose?.(); } catch { /* noop */ }

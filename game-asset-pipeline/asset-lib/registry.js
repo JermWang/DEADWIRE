@@ -98,8 +98,8 @@ export const ASSETS = [
   { id: 'shanty', displayName: 'Shanty', category: 'world', pipeline: 'coded', module: 'asset-lib/builders/world_kit.js', budgets: { maxTriangles: 400, maxMaterials: 5 }, tags: ['blocker', 'settlement'], status: 'active' },
   { id: 'market_stall', displayName: 'Market Stall', category: 'world', pipeline: 'coded', module: 'asset-lib/builders/world_kit.js', budgets: { maxTriangles: 300, maxMaterials: 5 }, tags: ['blocker', 'settlement', 'glow'], status: 'active' },
   { id: 'light_tower', displayName: 'Light Tower', category: 'world', pipeline: 'coded', module: 'asset-lib/builders/world_kit.js', budgets: { maxTriangles: 200, maxMaterials: 3 }, tags: ['glow', 'fx', 'landmark'], status: 'active' },
-  { id: 'rough_grass_patch', displayName: 'Rough Grass Patch', category: 'world', pipeline: 'coded', module: 'asset-lib/builders/world_kit.js', budgets: { maxTriangles: 240, maxMaterials: 2 }, tags: ['vegetation', 'ground', 'apocalypse'], status: 'active' },
-  { id: 'dead_shrub', displayName: 'Dead Shrub', category: 'world', pipeline: 'coded', module: 'asset-lib/builders/world_kit.js', budgets: { maxTriangles: 220, maxMaterials: 2 }, tags: ['vegetation', 'cover', 'apocalypse'], status: 'active' },
+  { id: 'rough_grass_patch', displayName: 'Rough Grass Patch', category: 'world', pipeline: 'coded', module: 'asset-lib/builders/world_kit.js', budgets: { maxTriangles: 240, maxMaterials: 3 }, tags: ['vegetation', 'ground', 'apocalypse'], status: 'active' },
+  { id: 'dead_shrub', displayName: 'Dead Shrub', category: 'world', pipeline: 'coded', module: 'asset-lib/builders/world_kit.js', budgets: { maxTriangles: 220, maxMaterials: 3 }, tags: ['vegetation', 'cover', 'apocalypse'], status: 'active' },
   { id: 'evergreen_tree', displayName: 'Evergreen Tree', category: 'world', pipeline: 'coded', module: 'asset-lib/builders/world_kit.js', budgets: { maxTriangles: 260, maxMaterials: 3 }, tags: ['vegetation', 'landmark', 'blocker'], status: 'active' },
   // --- cosmetics ---
   {

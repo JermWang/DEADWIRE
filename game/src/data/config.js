@@ -9,6 +9,17 @@ export const CONFIG = {
     insertionCountdownSec: 4.5,
     insertionPodSpawns: [5, 0, 1, 2, 3, 4],
   },
+  // Party size auto-selects the mode — no separate matchmaking UI.
+  // 1=SOLO, 2=DUO, 3=TRIO, 4=SQUAD. `pods` are spawnPoint indices (the local
+  // runner always rides pod index [0]); the BreakerYard exposes 6 spawnPoints,
+  // index 5 being the south-road occupied start. durationSec/coreSpawnSec let
+  // bigger parties run a touch longer / contest the core slightly later.
+  modes: {
+    1: { label: 'SOLO',  pods: [5],             durationSec: 480, coreSpawnSec: 180 },
+    2: { label: 'DUO',   pods: [5, 0],          durationSec: 510, coreSpawnSec: 195 },
+    3: { label: 'TRIO',  pods: [5, 0, 1],       durationSec: 540, coreSpawnSec: 210 },
+    4: { label: 'SQUAD', pods: [5, 0, 1, 2],    durationSec: 600, coreSpawnSec: 240 },
+  },
   player: {
     moveSpeed: 5.0,          // units/sec
     runSpeed: 7.2,

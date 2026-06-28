@@ -494,64 +494,120 @@ export function light_tower() {
   return g;
 }
 
-// Rough grass patch — low-cost crossed clumps with a dead, uneven wasteland
-// palette. One InstancedMesh keeps broad vegetation fields inexpensive.
+// Rough grass patch — low-cost voxel tufts with a dead, uneven wasteland
+// palette. Instanced meshes keep broad vegetation fields inexpensive.
 export function rough_grass_patch(opts = {}) {
   const { radius = 1.4, lushness = 0.55 } = opts;
   const g = group('rough_grass_patch');
-  const soil = mat('#4b4938', { rough: 1, transparent: true, opacity: 0.7 });
-  const grass = mat(lushness > 0.65 ? '#536846' : '#686044', { rough: 1 });
-  const patch = new THREE.Mesh(new THREE.CircleGeometry(radius, 8), soil);
+  const soil = mat('#454331', { rough: 1, transparent: true, opacity: 0.58 });
+  const grass = mat(lushness > 0.65 ? '#4f6d42' : '#625f3f', { rough: 1 });
+  const dryTips = mat(lushness > 0.65 ? '#78925b' : '#8a7b4d', { rough: 1 });
+  const patch = new THREE.Mesh(new THREE.CircleGeometry(radius, 10), soil);
   patch.rotation.x = -Math.PI / 2;
-  patch.position.y = 0.012;
+  patch.position.y = 0.009;
   patch.receiveShadow = true;
   g.add(patch);
 
-  const count = Math.max(7, Math.round(8 + lushness * 9));
-  const blades = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(0.07, 0.5, 0.12),
+  const tuftCount = Math.max(12, Math.round(14 + lushness * 14));
+  const tufts = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.1, 0.38, 0.16),
     grass,
-    count,
+    tuftCount,
+  );
+  const tallCount = Math.max(8, Math.round(8 + lushness * 10));
+  const tallBlades = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.045, 0.62, 0.07),
+    grass,
+    tallCount,
+  );
+  const tipCount = Math.max(4, Math.round(4 + lushness * 6));
+  const tips = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.09, 0.055, 0.09),
+    dryTips,
+    tipCount,
   );
   const dummy = new THREE.Object3D();
-  for (let i = 0; i < count; i++) {
-    const angle = i * 2.399963 + radius * 0.73;
-    const distance = radius * (0.18 + ((i * 37) % 71) / 100);
-    const height = 0.55 + ((i * 17) % 39) / 100;
-    dummy.position.set(Math.cos(angle) * distance, height * 0.25, Math.sin(angle) * distance);
-    dummy.rotation.set(0, angle, (i % 3 - 1) * 0.18);
+  for (let i = 0; i < tuftCount; i++) {
+    const angle = i * 2.399963 + radius * 0.61;
+    const distance = radius * (0.16 + ((i * 37) % 73) / 104);
+    const height = 0.55 + ((i * 17) % 43) / 100;
+    const lean = (i % 5 - 2) * 0.08;
+    dummy.position.set(Math.cos(angle) * distance, height * 0.19, Math.sin(angle) * distance);
+    dummy.rotation.set(lean, angle, (i % 3 - 1) * 0.16);
+    dummy.scale.set(0.75 + (i % 4) * 0.14, height, 0.85 + (i % 3) * 0.12);
+    dummy.updateMatrix();
+    tufts.setMatrixAt(i, dummy.matrix);
+  }
+  for (let i = 0; i < tallCount; i++) {
+    const angle = i * 2.77 + radius * 0.38;
+    const distance = radius * (0.12 + ((i * 29) % 68) / 112);
+    const height = 0.72 + ((i * 19) % 42) / 100;
+    dummy.position.set(Math.cos(angle) * distance, height * 0.24, Math.sin(angle) * distance);
+    dummy.rotation.set((i % 4 - 1.5) * 0.12, angle + Math.PI * 0.25, (i % 5 - 2) * 0.1);
     dummy.scale.set(1, height, 1);
     dummy.updateMatrix();
-    blades.setMatrixAt(i, dummy.matrix);
+    tallBlades.setMatrixAt(i, dummy.matrix);
   }
-  blades.castShadow = false;
-  blades.receiveShadow = true;
-  g.add(blades);
+  for (let i = 0; i < tipCount; i++) {
+    const angle = i * 2.19 + radius * 0.9;
+    const distance = radius * (0.2 + ((i * 41) % 57) / 105);
+    dummy.position.set(Math.cos(angle) * distance, 0.34 + (i % 4) * 0.035, Math.sin(angle) * distance);
+    dummy.rotation.set(0, angle, (i % 2 ? 1 : -1) * 0.12);
+    dummy.scale.setScalar(0.75 + (i % 3) * 0.16);
+    dummy.updateMatrix();
+    tips.setMatrixAt(i, dummy.matrix);
+  }
+  for (const mesh of [tufts, tallBlades, tips]) {
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    g.add(mesh);
+  }
   return g;
 }
 
-// Dead shrub — angular branches and a few desaturated needle clumps.
+// Dead shrub — now reads as a chunky voxel bush: angular branch bones with
+// blocky leaf/needle masses instead of sparse sticks.
 export function dead_shrub(opts = {}) {
   const { green = false } = opts;
   const g = group('dead_shrub');
   const wood = mat('#514739', { rough: 1 });
-  const needles = mat(green ? '#3d5442' : '#5d5942', { rough: 1 });
-  for (let i = 0; i < 7; i++) {
-    const angle = (i / 7) * Math.PI * 2 + 0.25;
-    const branch = cyl(0.018, 0.045, 0.75 + (i % 3) * 0.16, 5, wood, 0, 0.38, 0);
-    branch.rotation.z = 0.35 + (i % 2) * 0.22;
-    branch.rotation.y = angle;
-    branch.position.x = Math.cos(angle) * 0.12;
-    branch.position.z = Math.sin(angle) * 0.12;
+  const dark = mat(green ? '#2f4b39' : '#4d4d36', { rough: 1 });
+  const mid = mat(green ? '#456947' : '#68613f', { rough: 1 });
+
+  const addBlock = (w, h, d, material, x, y, z, rot = 0) => {
+    const clump = box(w, h, d, material, x, y, z);
+    clump.rotation.y = rot;
+    clump.castShadow = true;
+    g.add(clump);
+    return clump;
+  };
+  const addBranch = (w, h, d, x, y, z, rotY, tiltZ) => {
+    const branch = box(w, h, d, wood, x, y, z);
+    branch.rotation.y = rotY;
+    branch.rotation.z = tiltZ;
     g.add(branch);
-    if (i % 2 === 0) {
-      const clump = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16, 0), needles);
-      clump.position.set(Math.cos(angle) * 0.42, 0.58 + (i % 3) * 0.1, Math.sin(angle) * 0.42);
-      clump.scale.y = 0.6;
-      clump.castShadow = true;
-      g.add(clump);
-    }
+  };
+
+  addBlock(0.32, 0.2, 0.24, wood, 0, 0.12, 0, 0.2);
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2 + 0.18;
+    const length = 0.42 + (i % 3) * 0.08;
+    addBranch(0.07, length, 0.08, Math.cos(angle) * 0.18, 0.3 + (i % 2) * 0.06, Math.sin(angle) * 0.18, angle, (i % 2 ? 1 : -1) * 0.34);
   }
+  const blocks = [
+    [0.5, 0.32, 0.42, dark, 0, 0.42, 0, 0.12],
+    [0.38, 0.26, 0.34, mid, -0.32, 0.36, 0.08, -0.2],
+    [0.42, 0.3, 0.32, mid, 0.34, 0.38, -0.06, 0.28],
+    [0.34, 0.24, 0.36, dark, 0.08, 0.3, 0.33, -0.08],
+    [0.34, 0.22, 0.32, mid, -0.1, 0.32, -0.34, 0.35],
+    [0.3, 0.24, 0.26, dark, -0.44, 0.48, -0.22, 0.12],
+    [0.28, 0.22, 0.3, mid, 0.46, 0.5, 0.22, -0.28],
+    [0.32, 0.24, 0.28, green ? mid : dark, 0.04, 0.66, 0.02, 0.22],
+    [0.2, 0.18, 0.22, mid, -0.18, 0.62, 0.28, -0.18],
+    [0.22, 0.16, 0.2, dark, 0.24, 0.62, -0.26, 0.18],
+  ];
+  blocks.forEach((args) => addBlock(...args));
+  g.userData.radius = 0.56;
   return g;
 }
 

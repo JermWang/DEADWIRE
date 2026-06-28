@@ -9,29 +9,32 @@ const CORE_TIER_LOOKS = {
   blue: {
     id: 'blue',
     rarity: 'basic',
-    color: '#4dbdff',
-    hot: '#d8f5ff',
-    bloom: 0.84,
+    color: '#26aefc',
+    hot: '#72d7ff',
+    bloom: 0.72,
   },
   yellow: {
     id: 'yellow',
     rarity: 'regular',
-    color: '#ffc947',
-    hot: '#fff7c0',
-    bloom: 1,
+    color: '#ffb323',
+    hot: '#ffc84f',
+    bloom: 0.82,
   },
   purple: {
     id: 'purple',
     rarity: 'apex',
-    color: '#9c76ff',
-    hot: '#fff5ff',
-    bloom: 1.16,
+    color: '#9d42ff',
+    hot: '#bd73ff',
+    bloom: 0.92,
   },
 };
 
 function resolveTier(tier) {
   if (typeof tier === 'string') return CORE_TIER_LOOKS[tier] || CORE_TIER_LOOKS.yellow;
-  if (tier?.id) return { ...(CORE_TIER_LOOKS[tier.id] || CORE_TIER_LOOKS.yellow), ...tier };
+  if (tier?.id) {
+    const look = CORE_TIER_LOOKS[tier.id] || CORE_TIER_LOOKS.yellow;
+    return { ...tier, ...look, rarity: tier.rarity || look.rarity };
+  }
   return CORE_TIER_LOOKS.purple;
 }
 
@@ -61,16 +64,16 @@ export function build(opts = {}) {
     ...colors,
   };
 
-  const hotHeart = markMaterial(mat(C.core, { emissive: C.core, emissiveIntensity: 5.5 * bloom, rough: 0.12 }), 5.5 * bloom);
-  const hotPanel = markMaterial(mat(C.core, { emissive: C.core, emissiveIntensity: 4.25 * bloom, rough: 0.18 }), 4.25 * bloom);
-  const energy = markMaterial(mat(C.energy, { emissive: C.energy, emissiveIntensity: 2.55 * bloom, rough: 0.24 }), 2.55 * bloom);
+  const hotHeart = markMaterial(mat(C.core, { emissive: C.core, emissiveIntensity: 3.8 * bloom, rough: 0.12 }), 3.8 * bloom);
+  const hotPanel = markMaterial(mat(C.core, { emissive: C.core, emissiveIntensity: 3.05 * bloom, rough: 0.18 }), 3.05 * bloom);
+  const energy = markMaterial(mat(C.energy, { emissive: C.energy, emissiveIntensity: 2.85 * bloom, rough: 0.24 }), 2.85 * bloom);
   const aura = markMaterial(mat(C.energy, {
     emissive: C.energy,
-    emissiveIntensity: 1.45 * bloom,
+    emissiveIntensity: 1.65 * bloom,
     transparent: true,
-    opacity: variant === 'carry' ? 0.2 : 0.24,
+    opacity: variant === 'carry' ? 0.18 : 0.22,
     rough: 0.32,
-  }), 1.45 * bloom);
+  }), 1.65 * bloom);
   const cage = mat(C.cage, { metal: 0.68, rough: 0.34 });
   const edge = mat(C.edge, { metal: 0.56, rough: 0.38 });
   const scuffed = mat(C.scuffed, { metal: 0.5, rough: 0.54 });
@@ -90,7 +93,7 @@ export function build(opts = {}) {
     return setBaseTransform(mesh);
   };
 
-  // Overexposed inner heart, visible through the side windows and top opening.
+  // Saturated inner heart, visible through the side windows and top opening.
   const inner = addGlow(box(0.5, 0.5, 0.5, hotHeart));
   inner.name = 'reactor_heart';
   assembly.add(inner);
@@ -201,7 +204,7 @@ export function build(opts = {}) {
     }
   }
 
-  const light = new THREE.PointLight(C.energy, (variant === 'carry' ? 1.9 : 3.4) * bloom, 4.4, 2);
+  const light = new THREE.PointLight(C.energy, (variant === 'carry' ? 1.55 : 2.8) * bloom, 4.1, 2);
   light.position.y = assemblyBaseY;
   light.userData.baseIntensity = light.intensity;
   g.add(light);
@@ -212,11 +215,11 @@ export function build(opts = {}) {
   g.userData.updateIdle = (time = 0, strength = 1) => {
     const pulse = Math.sin(time * 2.45) * 0.5 + 0.5;
     const slow = Math.sin(time * 0.9) * 0.5 + 0.5;
-    const spark = Math.sin(time * 7.5) > 0.86 ? 0.45 : 0;
+    const spark = Math.sin(time * 7.5) > 0.86 ? 0.24 : 0;
 
     glowMaterials.forEach((material) => {
       const baseIntensity = material.userData.coreBaseIntensity ?? material.emissiveIntensity ?? 1;
-      material.emissiveIntensity = baseIntensity + (pulse * 0.45 + spark) * strength * bloom;
+      material.emissiveIntensity = baseIntensity + (pulse * 0.28 + spark) * strength * bloom;
     });
 
     assembly.rotation.y = time * (variant === 'carry' ? 0.82 : 0.36);
@@ -254,7 +257,7 @@ export function build(opts = {}) {
       );
     });
 
-    light.intensity = light.userData.baseIntensity + (pulse * 0.8 + spark * 0.55) * strength;
+    light.intensity = light.userData.baseIntensity + (pulse * 0.5 + spark * 0.35) * strength;
   };
   g.userData.idle = g.userData.updateIdle;
   g.userData.glow = inner;

@@ -24,7 +24,7 @@ export const RUNTIME = {
   goldPerDead: 1000,   // in-game Gold credited per 1 $DEAD
 
   // Public social destination shown on the cinematic entry screen.
-  xUrl: '',
+  xUrl: 'https://x.com/deadwireSOL',
 };
 
 function runtimeOverride(key) {

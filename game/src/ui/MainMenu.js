@@ -9,6 +9,7 @@ import { buildAsset, mat, PALETTE } from '../assets.js';
 import { disposeObjectTree } from '../render/dispose.js';
 import { Stash } from '../systems/Stash.js';
 import { RUNTIME } from '../config/runtime.js';
+import { Hints } from './Hints.js';
 
 // Pixabay sources, free under the Pixabay Content License. Kept remote so the
 // landing page stays light; the mechanical reactor bed is synthesized locally.
@@ -168,6 +169,9 @@ export class MainMenu {
     addEventListener('pointermove', this._onPointerMove, { passive: true });
     this._initScene();
     reactorAudio().start();
+    // First-time runners get a short "what is Deadwire" coachmark after the
+    // cinematic settles. No-op for veterans (read-only Stash onboarded check).
+    this._hintTimer = setTimeout(() => Hints.show('menu', this.root), 1100);
   }
 
   _esc(value) {
@@ -425,6 +429,7 @@ export class MainMenu {
 
   destroy() {
     this.running = false;
+    clearTimeout(this._hintTimer);
     removeEventListener('pointermove', this._onPointerMove);
     disposeObjectTree(this.scene);
     try { this.composer?.dispose?.(); } catch { /* noop */ }

@@ -16,10 +16,18 @@ const clients = new Map(); // id -> Client
 const lobbies = new Map(); // partyCode -> Map<id, LobbyClient>
 let nextId = 1;
 
+// Party size auto-selects the mode (1=SOLO..4=SQUAD). Server stays the single
+// source of truth for per-size timing; clients apply CONFIG.modes[size] for HUD.
+function modeFor(size) {
+  const n = Math.max(1, Math.min(MAX_LOBBY, Number(size) || 1));
+  return CONFIG.modes?.[n] || { label: 'SOLO', durationSec: CONFIG.match.durationSec, coreSpawnSec: CONFIG.match.coreSpawnSec };
+}
+
 // One persistent room. The first match socket opens the insertion window; the
 // match clock itself starts at GO so the pod countdown does not burn run time.
 const room = {
   startMs: 0,
+  size: 1,                 // current party size → mode timing
   coreSpawned: false,
   core: { carrierId: null, x: CONFIG.map?.coreSpawn?.[0] ?? 0, z: 0, tier: chooseCoreTier().id },
   cratesOpened: new Set(),
@@ -87,7 +95,14 @@ class LobbyClient {
       const lobby = lobbies.get(this.partyCode);
       const leader = lobby?.values().next().value;
       if (!lobby || leader !== this || ![...lobby.values()].every((member) => member.ready)) return;
-      const launch = JSON.stringify({ t: 'lobby_launch', partyCode: this.partyCode });
+      // Party size determines the mode for every member of this party.
+      const size = Math.max(1, Math.min(MAX_LOBBY, lobby.size));
+      const mode = modeFor(size);
+      // Group the upcoming match by party: this roster's size becomes the room mode.
+      room.size = size;
+      const launch = JSON.stringify({
+        t: 'lobby_launch', partyCode: this.partyCode, size, mode: mode.label,
+      });
       for (const member of lobby.values()) member.conn.send(launch);
     }
   }
@@ -119,11 +134,14 @@ class Client {
     conn.on('message', (m) => this._onMessage(m));
     conn.on('close', () => this._onClose());
 
+    const mode = modeFor(room.size);
     this._send({
       t: 'welcome', id: this.id,
       match: {
-        durationSec: CONFIG.match.durationSec,
-        coreSpawnSec: CONFIG.match.coreSpawnSec,
+        size: room.size,
+        mode: mode.label,
+        durationSec: mode.durationSec,
+        coreSpawnSec: mode.coreSpawnSec,
         elapsed: elapsed(),
         insertionCountdownSec: CONFIG.match.insertionCountdownSec || 0,
         insertionRemaining: insertionRemaining(),
@@ -183,7 +201,7 @@ class Client {
 // server-driven core spawn so all clients agree on timing
 setInterval(() => {
   if (!room.startMs || room.coreSpawned) return;
-  if (elapsed() >= CONFIG.match.coreSpawnSec) {
+  if (elapsed() >= modeFor(room.size).coreSpawnSec) {
     room.coreSpawned = true;
     broadcast({ t: 'core_spawn', x: room.core.x, z: room.core.z, tier: room.core.tier });
     console.log('[match] core online');

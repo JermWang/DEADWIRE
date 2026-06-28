@@ -1,5 +1,6 @@
 // Hud — DOM overlay: timer, health, weapon/ammo, objective, prompts, damage numbers.
 import * as THREE from 'three';
+import { Hints } from './Hints.js';
 
 const GOLD_TOKEN_IMAGE_URL = '/dead%20gold%20token.png';
 
@@ -11,6 +12,7 @@ function lootLabel(item) {
 export class Hud {
   constructor(root, camera) {
     this.camera = camera;
+    this._hintRoot = root;
     this.el = document.createElement('div');
     this.el.className = 'hud';
     this.el.innerHTML = `
@@ -42,6 +44,25 @@ export class Hud {
     this._dmg = [];
     this._markers = new Map();
     this._mini = this.$('hudMinimap').getContext('2d');
+    // First-time deploy: controls + extraction-loop coachmarks, then a short
+    // economy explainer once those close. No-op for veterans (Hints checks
+    // Stash.onboarded read-only) and once dismissed/muted.
+    this._hintTimer = setTimeout(() => this.showFirstRunHints(), 1600);
+  }
+
+  // Plays the in-run tutorial: HUD/controls sequence, then the economy primer.
+  // Chained so the two non-blocking popups never overlap.
+  showFirstRunHints() {
+    const root = this._hintRoot;
+    if (!root || !this.el.isConnected) return; // HUD already torn down
+    const hudRun = Hints.show('hud', root);
+    if (hudRun) {
+      const wasOnClose = hudRun.onClose;
+      hudRun.onClose = () => { wasOnClose?.(); setTimeout(() => Hints.show('economy', root), 600); };
+    } else {
+      // HUD tips already seen/muted — still offer the economy primer if pending.
+      Hints.show('economy', root);
+    }
   }
 
   setTimer(sec) {

@@ -44,6 +44,25 @@ async function sendDead(uiAmount) {
   return signature;
 }
 
+// Direct edge-function call for money rails not yet wrapped in account.js. Uses the
+// same token-gated transport: anon key satisfies the gateway, the HMAC session
+// token is the real auth. Never sends a private key — the wallet signs on-chain.
+async function settle(action, payload = {}) {
+  if (!Account.isLoggedIn()) throw new Error('connect wallet first');
+  const res = await fetch(`${RUNTIME.supabaseUrl}/functions/v1/account`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: RUNTIME.supabaseAnonKey,
+      Authorization: `Bearer ${RUNTIME.supabaseAnonKey}`,
+    },
+    body: JSON.stringify({ action, token: Account.token, ...payload }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `account ${action} failed (${res.status})`);
+  return data;
+}
+
 export const Pay = {
   configured() { return !!(RUNTIME.deadMint && RUNTIME.treasury); },
   quoteGold(deadAmount) { return Math.floor(deadAmount * (RUNTIME.goldPerDead || 0)); },
@@ -53,5 +72,31 @@ export const Pay = {
     if (!Account.isLoggedIn()) throw new Error('connect wallet first');
     const sig = await sendDead(deadAmount);
     return Account.buyGold(sig); // { credited, deadAmount, stash }
+  },
+
+  // Deposit $DEAD to the treasury and record it on-chain + in the DB. The wallet
+  // signs/sends the SPL transfer; the edge fn re-verifies the sig before booking.
+  async depositDead(deadAmount) {
+    if (!Account.isLoggedIn()) throw new Error('connect wallet first');
+    const sig = await sendDead(deadAmount);
+    return settle('deposit', { txSig: sig }); // { ok, deadAmount }
+  },
+
+  // Request a $DEAD withdrawal. REQUEST ONLY — payouts are never auto-signed; the
+  // edge fn records an intent row flagged for manual review. `wallet` defaults to
+  // the connected wallet server-side. Returns { ok, requestId, status, manualReview }.
+  async requestWithdraw(deadAmount, wallet) {
+    if (!Account.isLoggedIn()) throw new Error('connect wallet first');
+    const payload = { deadAmount };
+    if (wallet) payload.wallet = wallet;
+    return settle('withdraw', payload);
+  },
+
+  // Buy a marketplace listing: pay the seller's price in $DEAD to the treasury,
+  // then the edge fn verifies the tx and transfers item ownership in the DB.
+  async buyListing(listingId, priceDead) {
+    if (!Account.isLoggedIn()) throw new Error('connect wallet first');
+    const sig = await sendDead(priceDead);
+    return settle('tradeSale', { listingId, txSig: sig }); // { ok, item, qty, stash }
   },
 };
