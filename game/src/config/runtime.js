@@ -16,11 +16,12 @@ export const RUNTIME = {
   solanaRpc: 'https://api.mainnet-beta.solana.com',
 
   // $DEAD — on-chain hard currency (SPL, mainnet). Gold is in-game only and is
-  // bought with $DEAD. Fill these in AFTER creating the mint (see TOKEN.md); keep
-  // them in sync with the server's app_config row. Until set, the $DEAD store path
-  // stays disabled (the game still runs; Gold just can't be purchased yet).
-  deadMint: '',        // $DEAD SPL mint address
-  treasury: '',        // treasury wallet pubkey that receives $DEAD payments
+  // bought with $DEAD. The CA is PRE-WIRED for display (start-screen CA chip) ahead
+  // of launch; the buy/deposit/trade rails stay DISABLED until `treasury` is set
+  // (Pay.configured() needs both; the server stays 503 while app_config.treasury is
+  // empty). Flip on at launch by setting treasury here + in Supabase app_config.
+  deadMint: 'nVE4EY5Q5ByPjsNAFuCr2iMC7Gpu2pgrTStx4MNpump', // $DEAD mint (pump.fun, pre-launch)
+  treasury: '',        // treasury wallet pubkey — set at launch to enable purchases
   goldPerDead: 1000,   // in-game Gold credited per 1 $DEAD
 
   // Public social destination shown on the cinematic entry screen.
