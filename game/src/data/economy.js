@@ -10,7 +10,7 @@ export const CORE_TIERS = {
     id: 'blue',
     label: 'Blue Core',
     grade: 'LOW',
-    rarity: 'low',
+    rarity: 'basic',
     color: '#4dbdff',
     hot: '#d8f5ff',
     item: 'Blue Reactor Core',

@@ -310,6 +310,7 @@
       function animate(time) {
         requestAnimationFrame(animate);
         if (active) {
+          active.userData.updateIdle?.(time * 0.001, 1.05);
           active.rotation.y = time * 0.00045;
           active.position.y = Math.sin(time * 0.002) * 0.04;
         }
@@ -328,4 +329,3 @@
     </script>
   </body>
 </html>
-

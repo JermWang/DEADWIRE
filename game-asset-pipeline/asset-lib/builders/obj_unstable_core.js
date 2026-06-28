@@ -1,103 +1,191 @@
-// obj_unstable_core — Deadwire's apex extraction resource.
-// A dense, hand-carriable reactor cube: black armored edge cage, overexposed
-// violet heart, luminous corner locks, and small energy fragments.
+// obj_unstable_core — Deadwire's extraction prize.
+// A chunky armored reactor cube: bright panel windows, industrial slab cage,
+// tier-colored aura, and tiny orbiting voxel fragments.
 import * as THREE from 'three';
 import { mat, PALETTE as P } from '../palette.js?v=wii-voxel-toy-v3';
 import { box, cyl, group, socket } from '../prim.js?v=wii-voxel-toy-v3';
 
+const CORE_TIER_LOOKS = {
+  blue: {
+    id: 'blue',
+    rarity: 'basic',
+    color: '#4dbdff',
+    hot: '#d8f5ff',
+    bloom: 0.84,
+  },
+  yellow: {
+    id: 'yellow',
+    rarity: 'regular',
+    color: '#ffc947',
+    hot: '#fff7c0',
+    bloom: 1,
+  },
+  purple: {
+    id: 'purple',
+    rarity: 'apex',
+    color: '#9c76ff',
+    hot: '#fff5ff',
+    bloom: 1.16,
+  },
+};
+
+function resolveTier(tier) {
+  if (typeof tier === 'string') return CORE_TIER_LOOKS[tier] || CORE_TIER_LOOKS.yellow;
+  if (tier?.id) return { ...(CORE_TIER_LOOKS[tier.id] || CORE_TIER_LOOKS.yellow), ...tier };
+  return CORE_TIER_LOOKS.purple;
+}
+
+function markMaterial(material, baseIntensity) {
+  material.userData.coreBaseIntensity = baseIntensity;
+  return material;
+}
+
+function setBaseTransform(mesh) {
+  mesh.userData.basePosition = mesh.position.clone();
+  mesh.userData.baseRotation = mesh.rotation.clone();
+  mesh.userData.baseScale = mesh.scale.clone();
+  return mesh;
+}
+
 export function build(opts = {}) {
   const { colors = {}, tier = null, variant = 'world' } = opts;
+  const tierLook = resolveTier(tier);
+  const bloom = tierLook.bloom || 1;
   const C = {
-    core: tier?.hot || '#fff5ff',
-    energy: tier?.color || '#8545ff',
-    cage: '#171827',
-    edge: '#35304c',
+    core: tierLook.hot,
+    energy: tierLook.color,
+    cage: '#11131d',
+    edge: '#2e3140',
+    scuffed: '#4a4c52',
     base: P.steelDark,
     ...colors,
   };
-  const hot = mat(C.core, { emissive: C.core, emissiveIntensity: 4.8, rough: 0.18 });
-  const energy = mat(C.energy, { emissive: C.energy, emissiveIntensity: 2.35, rough: 0.25 });
-  const aura = mat(C.energy, {
-    emissive: C.energy, emissiveIntensity: 1.35, transparent: true, opacity: 0.2, rough: 0.3,
-  });
-  const cage = mat(C.cage, { metal: 0.62, rough: 0.34 });
-  const edge = mat(C.edge, { metal: 0.52, rough: 0.38 });
+
+  const hotHeart = markMaterial(mat(C.core, { emissive: C.core, emissiveIntensity: 5.5 * bloom, rough: 0.12 }), 5.5 * bloom);
+  const hotPanel = markMaterial(mat(C.core, { emissive: C.core, emissiveIntensity: 4.25 * bloom, rough: 0.18 }), 4.25 * bloom);
+  const energy = markMaterial(mat(C.energy, { emissive: C.energy, emissiveIntensity: 2.55 * bloom, rough: 0.24 }), 2.55 * bloom);
+  const aura = markMaterial(mat(C.energy, {
+    emissive: C.energy,
+    emissiveIntensity: 1.45 * bloom,
+    transparent: true,
+    opacity: variant === 'carry' ? 0.2 : 0.24,
+    rough: 0.32,
+  }), 1.45 * bloom);
+  const cage = mat(C.cage, { metal: 0.68, rough: 0.34 });
+  const edge = mat(C.edge, { metal: 0.56, rough: 0.38 });
+  const scuffed = mat(C.scuffed, { metal: 0.5, rough: 0.54 });
   const base = mat(C.base, { metal: 0.58, rough: 0.46 });
 
   const g = group('obj_unstable_core');
   const assembly = group('core_assembly');
-  assembly.position.y = variant === 'carry' ? 0 : 0.54;
+  const assemblyBaseY = variant === 'carry' ? 0 : 0.54;
+  assembly.position.y = assemblyBaseY;
   g.add(assembly);
 
-  // White-violet heart and a faint larger energy volume.
-  const inner = box(0.34, 0.34, 0.34, hot);
+  const glowParts = [];
+  const auraParts = [];
+  const addGlow = (mesh, auraMesh = false) => {
+    glowParts.push(mesh);
+    if (auraMesh) auraParts.push(mesh);
+    return setBaseTransform(mesh);
+  };
+
+  // Overexposed inner heart, visible through the side windows and top opening.
+  const inner = addGlow(box(0.5, 0.5, 0.5, hotHeart));
   inner.name = 'reactor_heart';
   assembly.add(inner);
-  const energyVolume = box(0.43, 0.43, 0.43, aura);
+
+  const energyVolume = addGlow(box(0.72, 0.72, 0.72, aura), true);
   energyVolume.name = 'energy_volume';
   energyVolume.rotation.set(0.14, 0.22, 0.08);
   assembly.add(energyVolume);
 
-  // Twelve armored edge rails create the unmistakable caged-cube silhouette.
-  const railLength = 0.58;
-  const railOffset = 0.3;
+  // Twelve thick rails set the iconic caged-cube silhouette.
+  const railLength = 0.86;
+  const railOffset = 0.42;
   for (const y of [-railOffset, railOffset]) {
-    for (const z of [-railOffset, railOffset]) assembly.add(box(railLength, 0.07, 0.07, cage, 0, y, z));
+    for (const z of [-railOffset, railOffset]) assembly.add(box(railLength, 0.085, 0.085, cage, 0, y, z));
   }
   for (const x of [-railOffset, railOffset]) {
-    for (const z of [-railOffset, railOffset]) assembly.add(box(0.07, railLength, 0.07, cage, x, 0, z));
+    for (const z of [-railOffset, railOffset]) assembly.add(box(0.085, railLength, 0.085, cage, x, 0, z));
   }
   for (const x of [-railOffset, railOffset]) {
-    for (const y of [-railOffset, railOffset]) assembly.add(box(0.07, 0.07, railLength, cage, x, y, 0));
+    for (const y of [-railOffset, railOffset]) assembly.add(box(0.085, 0.085, railLength, cage, x, y, 0));
   }
 
-  // Eight bright corner locks, backed by chunky dark mounting blocks.
-  const glowParts = [inner, energyVolume];
+  // Heavy corner armor blocks, with smaller brighter locks tucked just outside.
   for (const x of [-1, 1]) {
     for (const y of [-1, 1]) {
       for (const z of [-1, 1]) {
-        assembly.add(box(0.16, 0.16, 0.16, edge, x * 0.3, y * 0.3, z * 0.3));
-        const lock = box(0.09, 0.09, 0.09, energy, x * 0.345, y * 0.345, z * 0.345);
+        assembly.add(box(0.2, 0.2, 0.2, edge, x * 0.43, y * 0.43, z * 0.43));
+        const lock = addGlow(box(0.075, 0.075, 0.075, energy, x * 0.51, y * 0.51, z * 0.51));
         lock.name = 'corner_lock';
         assembly.add(lock);
-        glowParts.push(lock);
       }
     }
   }
 
-  // Thin luminous brackets on every face read clearly from any camera angle.
-  const addFaceFrame = (axis, sign) => {
-    const p = sign * 0.352;
+  const addSideFace = (axis, sign) => {
+    const p = sign * 0.465;
     if (axis === 'z') {
-      assembly.add(box(0.4, 0.045, 0.035, energy, 0, 0.235, p));
-      assembly.add(box(0.4, 0.045, 0.035, energy, 0, -0.235, p));
-      assembly.add(box(0.045, 0.4, 0.035, energy, 0.235, 0, p));
-      assembly.add(box(0.045, 0.4, 0.035, energy, -0.235, 0, p));
-    } else if (axis === 'x') {
-      assembly.add(box(0.035, 0.045, 0.4, energy, p, 0.235, 0));
-      assembly.add(box(0.035, 0.045, 0.4, energy, p, -0.235, 0));
-      assembly.add(box(0.035, 0.4, 0.045, energy, p, 0, 0.235));
-      assembly.add(box(0.035, 0.4, 0.045, energy, p, 0, -0.235));
+      const window = addGlow(box(0.48, 0.42, 0.035, hotPanel, 0, 0, p));
+      window.name = 'reactor_window';
+      assembly.add(window);
+      assembly.add(box(0.72, 0.08, 0.105, scuffed, 0, 0.32, p + sign * 0.012));
+      assembly.add(box(0.72, 0.08, 0.105, cage, 0, -0.32, p + sign * 0.012));
+      assembly.add(box(0.085, 0.56, 0.105, cage, 0.32, 0, p + sign * 0.012));
+      assembly.add(box(0.085, 0.56, 0.105, edge, -0.32, 0, p + sign * 0.012));
+      assembly.add(addGlow(box(0.07, 0.56, 0.045, energy, 0.235, 0, p + sign * 0.026)));
+      assembly.add(addGlow(box(0.07, 0.56, 0.045, energy, -0.235, 0, p + sign * 0.026)));
+      assembly.add(addGlow(box(0.5, 0.055, 0.045, energy, 0, 0.255, p + sign * 0.028)));
+      assembly.add(addGlow(box(0.5, 0.055, 0.045, energy, 0, -0.255, p + sign * 0.028)));
     } else {
-      assembly.add(box(0.4, 0.035, 0.045, energy, 0, p, 0.235));
-      assembly.add(box(0.4, 0.035, 0.045, energy, 0, p, -0.235));
-      assembly.add(box(0.045, 0.035, 0.4, energy, 0.235, p, 0));
-      assembly.add(box(0.045, 0.035, 0.4, energy, -0.235, p, 0));
+      const window = addGlow(box(0.035, 0.42, 0.48, hotPanel, p, 0, 0));
+      window.name = 'reactor_window';
+      assembly.add(window);
+      assembly.add(box(0.105, 0.08, 0.72, scuffed, p + sign * 0.012, 0.32, 0));
+      assembly.add(box(0.105, 0.08, 0.72, cage, p + sign * 0.012, -0.32, 0));
+      assembly.add(box(0.105, 0.56, 0.085, cage, p + sign * 0.012, 0, 0.32));
+      assembly.add(box(0.105, 0.56, 0.085, edge, p + sign * 0.012, 0, -0.32));
+      assembly.add(addGlow(box(0.045, 0.56, 0.07, energy, p + sign * 0.026, 0, 0.235)));
+      assembly.add(addGlow(box(0.045, 0.56, 0.07, energy, p + sign * 0.026, 0, -0.235)));
+      assembly.add(addGlow(box(0.045, 0.055, 0.5, energy, p + sign * 0.028, 0.255, 0)));
+      assembly.add(addGlow(box(0.045, 0.055, 0.5, energy, p + sign * 0.028, -0.255, 0)));
     }
   };
-  for (const axis of ['x', 'y', 'z']) for (const sign of [-1, 1]) addFaceFrame(axis, sign);
+  for (const axis of ['x', 'z']) for (const sign of [-1, 1]) addSideFace(axis, sign);
 
-  // A few orbiting voxel fragments sell instability without hiding the cube.
+  const addCap = (sign) => {
+    const y = sign * 0.465;
+    const window = addGlow(box(0.54, 0.035, 0.54, hotPanel, 0, y, 0));
+    window.name = sign > 0 ? 'reactor_top_window' : 'reactor_bottom_window';
+    assembly.add(window);
+    assembly.add(box(0.72, 0.095, 0.16, scuffed, 0, y + sign * 0.02, 0.34));
+    assembly.add(box(0.72, 0.095, 0.16, cage, 0, y + sign * 0.02, -0.34));
+    assembly.add(box(0.16, 0.095, 0.72, cage, 0.34, y + sign * 0.02, 0));
+    assembly.add(box(0.16, 0.095, 0.72, edge, -0.34, y + sign * 0.02, 0));
+    assembly.add(addGlow(box(0.84, 0.04, 0.055, energy, 0, y + sign * 0.052, 0.225)));
+    assembly.add(addGlow(box(0.84, 0.04, 0.055, energy, 0, y + sign * 0.052, -0.225)));
+    assembly.add(addGlow(box(0.055, 0.04, 0.84, energy, 0.225, y + sign * 0.052, 0)));
+    assembly.add(addGlow(box(0.055, 0.04, 0.84, energy, -0.225, y + sign * 0.052, 0)));
+  };
+  addCap(1);
+  addCap(-1);
+
+  // Voxel motes around the cube, kept sparse so the silhouette stays readable.
   const shards = group('energy_shards');
   const shardPositions = [
-    [0.58, 0.2, 0.1], [-0.52, -0.12, 0.2], [0.14, 0.54, -0.34],
-    [-0.25, 0.33, 0.55], [0.38, -0.44, -0.28], [-0.57, 0.42, -0.22],
+    [0.72, 0.28, 0.08], [-0.66, -0.16, 0.24], [0.14, 0.75, -0.42],
+    [-0.3, 0.42, 0.72], [0.48, -0.58, -0.34], [-0.72, 0.56, -0.28],
+    [0.24, 0.9, 0.34], [0.82, -0.06, -0.5], [-0.56, -0.74, 0.12],
   ];
   shardPositions.forEach(([x, y, z], index) => {
-    const shard = box(index % 2 ? 0.055 : 0.08, 0.035, 0.035, energy, x, y, z);
-    shard.rotation.set(index * 0.3, index * 0.55, index * 0.2);
+    const size = index % 3 === 0 ? 0.07 : index % 3 === 1 ? 0.052 : 0.038;
+    const shard = addGlow(box(size, size, size, index % 2 ? energy : aura, x, y, z), index % 2 === 0);
+    shard.name = 'reactor_mote';
+    shard.rotation.set(index * 0.31, index * 0.57, index * 0.23);
+    shard.userData.floatPhase = index * 0.73;
     shards.add(shard);
-    glowParts.push(shard);
   });
   assembly.add(shards);
 
@@ -113,20 +201,73 @@ export function build(opts = {}) {
     }
   }
 
-  const light = new THREE.PointLight(C.energy, variant === 'carry' ? 1.8 : 3.2, 4.2, 2);
-  light.position.y = variant === 'carry' ? 0 : 0.54;
+  const light = new THREE.PointLight(C.energy, (variant === 'carry' ? 1.9 : 3.4) * bloom, 4.4, 2);
+  light.position.y = assemblyBaseY;
+  light.userData.baseIntensity = light.intensity;
   g.add(light);
 
-  g.add(socket('carry', 0, variant === 'carry' ? 0 : 0.54, 0));
+  g.add(socket('carry', 0, assemblyBaseY, 0));
+
+  const glowMaterials = [...new Set(glowParts.map((part) => part.material).filter(Boolean))];
+  g.userData.updateIdle = (time = 0, strength = 1) => {
+    const pulse = Math.sin(time * 2.45) * 0.5 + 0.5;
+    const slow = Math.sin(time * 0.9) * 0.5 + 0.5;
+    const spark = Math.sin(time * 7.5) > 0.86 ? 0.45 : 0;
+
+    glowMaterials.forEach((material) => {
+      const baseIntensity = material.userData.coreBaseIntensity ?? material.emissiveIntensity ?? 1;
+      material.emissiveIntensity = baseIntensity + (pulse * 0.45 + spark) * strength * bloom;
+    });
+
+    assembly.rotation.y = time * (variant === 'carry' ? 0.82 : 0.36);
+    assembly.rotation.x = Math.sin(time * 0.42) * 0.045;
+    assembly.position.y = assemblyBaseY + Math.sin(time * 1.35) * (variant === 'carry' ? 0.022 : 0.04);
+
+    energyVolume.rotation.x = 0.14 + time * 0.26;
+    energyVolume.rotation.y = 0.22 + time * 0.18;
+    energyVolume.rotation.z = 0.08 - time * 0.2;
+    energyVolume.scale.setScalar(1 + (pulse * 0.05 + slow * 0.025) * strength);
+
+    auraParts.forEach((part, index) => {
+      const baseScale = part.userData.baseScale;
+      if (!baseScale) return;
+      const auraPulse = 1 + (Math.sin(time * 1.65 + index) * 0.035 + 0.07) * strength;
+      part.scale.set(baseScale.x * auraPulse, baseScale.y * auraPulse, baseScale.z * auraPulse);
+    });
+
+    shards.rotation.y = -time * 0.72;
+    shards.rotation.x = Math.sin(time * 0.55) * 0.16;
+    shards.children.forEach((shard, index) => {
+      const basePosition = shard.userData.basePosition;
+      const baseRotation = shard.userData.baseRotation;
+      if (!basePosition || !baseRotation) return;
+      const phase = shard.userData.floatPhase || index;
+      shard.position.set(
+        basePosition.x + Math.sin(time * 1.3 + phase) * 0.026 * strength,
+        basePosition.y + Math.sin(time * 1.7 + phase) * 0.04 * strength,
+        basePosition.z + Math.cos(time * 1.15 + phase) * 0.026 * strength,
+      );
+      shard.rotation.set(
+        baseRotation.x + time * (0.45 + index * 0.025),
+        baseRotation.y + time * (0.34 + index * 0.02),
+        baseRotation.z + time * (0.28 + index * 0.018),
+      );
+    });
+
+    light.intensity = light.userData.baseIntensity + (pulse * 0.8 + spark * 0.55) * strength;
+  };
+  g.userData.idle = g.userData.updateIdle;
   g.userData.glow = inner;
   g.userData.glowParts = glowParts;
+  g.userData.auraParts = auraParts;
   g.userData.coreAssembly = assembly;
   g.userData.energyVolume = energyVolume;
   g.userData.shards = shards;
-  g.userData.radius = 0.48;
+  g.userData.radius = 0.56;
   g.userData.interactRange = 1.7;
-  g.userData.rarity = tier?.rarity || 'apex';
-  g.userData.tier = tier?.id || 'purple';
+  g.userData.rarity = tierLook.rarity;
+  g.userData.tier = tierLook.id;
+  g.userData.updateIdle(0, 1);
   return g;
 }
 
@@ -135,5 +276,5 @@ export const meta = {
   displayName: 'Reactor Core',
   category: 'objective',
   rarity: 'apex',
-  budgets: { maxTriangles: 1100, maxMaterials: 6 },
+  budgets: { maxTriangles: 1500, maxMaterials: 8 },
 };

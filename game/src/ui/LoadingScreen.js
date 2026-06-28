@@ -140,6 +140,7 @@ export class LoadingScreen {
     const time = performance.now() * 0.001;
     this.backdrop?.update(time);
     this.assetRoot.rotation.y = Math.sin(time * 0.42) * 0.18;
+    this.core.userData.updateIdle?.(time, 1.05);
     this.core.rotation.y += 0.018;
     this.core.position.y = 0.95 + Math.sin(time * 2.4) * 0.08;
     this.renderer.render(this.scene, this.camera);

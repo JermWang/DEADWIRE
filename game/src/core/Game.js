@@ -978,16 +978,7 @@ export class Game {
   _updateCoreCarry(dt) {
     if (!this.player.carryingCore) { this.pingRing.visible = false; return; }
     // Pulse and counter-rotate the hand-carried reactor cube.
-    const pulse = Math.sin(this.t * 6);
-    const glowMaterials = new Set(
-      (this.carryOrb.userData.glowParts || []).map((part) => part.material).filter(Boolean),
-    );
-    glowMaterials.forEach((material) => {
-      const hot = material === this.carryOrb.userData.glow?.material;
-      material.emissiveIntensity = (hot ? 4.8 : 2.4) + pulse * (hot ? 1.1 : 0.5);
-    });
-    const carriedAssembly = this.carryOrb.userData.coreAssembly;
-    if (carriedAssembly) carriedAssembly.rotation.y += dt * 0.85;
+    this.carryOrb.userData.updateIdle?.(this.t, 1.12);
 
     // periodic position reveal ping
     this.pingTimer -= dt;

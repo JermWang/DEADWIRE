@@ -132,6 +132,19 @@ export class MainMenu {
       <canvas id="reactorCanvas" aria-hidden="true"></canvas>
       <div class="start-grade"></div>
       <div class="start-noise"></div>
+      <nav class="start-nav" aria-label="Deadwire start navigation">
+        <div class="start-nav-mark" aria-label="Deadwire">
+          <span>DEAD</span><b>WIRE</b>
+        </div>
+        <div class="start-nav-actions">
+          <button class="contract-link" type="button" title="Copy contract address">
+            <span>CA</span><b>${this._esc(contract)}</b>
+          </button>
+          <a ${xUrl
+            ? `href="${this._esc(xUrl)}" target="_blank" rel="noopener noreferrer"`
+            : 'class="is-pending" aria-disabled="true"'} aria-label="Deadwire on X">X</a>
+        </div>
+      </nav>
       <div class="start-content">
         <div class="start-mark" aria-label="Deadwire">
           <span>DEAD</span><b>WIRE</b>
@@ -140,15 +153,7 @@ export class MainMenu {
           <span>ENTER GAME</span>
           <i></i>
         </button>
-      </div>
-      <footer class="start-links">
-        <button class="contract-link" type="button" title="Copy contract address">
-          <span>CA</span><b>${this._esc(contract)}</b>
-        </button>
-        <a ${xUrl
-          ? `href="${this._esc(xUrl)}" target="_blank" rel="noopener noreferrer"`
-          : 'class="is-pending" aria-disabled="true"'} aria-label="Deadwire on X">X</a>
-      </footer>`;
+      </div>`;
     this.root.appendChild(this.el);
 
     this.el.addEventListener('pointerdown', () => reactorAudio().start(), { once: true, capture: true });
@@ -268,7 +273,10 @@ export class MainMenu {
     }
 
     this._place('reactor_tower', 0, 0, -13.2, 2.3);
-    this._place('obj_unstable_core', 0, 0.78, -4.9, 1.55);
+    this.heroCore = this._place('obj_unstable_core', 0, 1.58, -4.35, 2.25, 0.42, {
+      variant: 'carry',
+      tier: { id: 'yellow', rarity: 'regular', color: '#ffb341', hot: '#fff2bd' },
+    });
     this._place('generator', -4.9, 0, -8.2, 1.45, 0.08);
     this._place('generator', 4.9, 0, -8.2, 1.45, -0.08);
     this._place('server_rack', -6.2, 0, -12.1, 1.25, Math.PI / 2);
@@ -395,6 +403,11 @@ export class MainMenu {
     this.camera.lookAt(this.pointer.x * 0.16, 1.12 - this.pointer.y * 0.06, -4.1);
 
     this.crawlers.forEach((crawler) => this._animateCrawler(crawler, time));
+    if (this.heroCore) {
+      this.heroCore.userData.updateIdle?.(time, 1.08);
+      this.heroCore.rotation.y = 0.42 + Math.sin(time * 0.22) * 0.2;
+      this.heroCore.rotation.x = Math.sin(time * 0.18) * 0.06;
+    }
     if (this.turret) this.turret.rotation.y = -2.2 + Math.sin(time * 0.24) * 0.72;
     if (this.hauler) this.hauler.position.z = -14.1 + Math.sin(time * 0.18) * 1.1;
     if (this.dust) this.dust.rotation.y = time * 0.006;

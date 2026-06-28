@@ -68,8 +68,8 @@ export const ASSETS = [
   {
     id: 'obj_unstable_core', displayName: 'Reactor Core', category: 'objective',
     pipeline: 'coded', module: 'asset-lib/builders/obj_unstable_core.js',
-    budgets: { maxTriangles: 1100, maxMaterials: 6 }, rarity: 'apex',
-    tags: ['objective', 'carry', 'glow', 'reactor', 'apex'],
+    budgets: { maxTriangles: 1500, maxMaterials: 8 }, rarity: 'apex',
+    tags: ['objective', 'carry', 'glow', 'reactor', 'apex', 'tiered'],
     status: 'active',
   },
   {

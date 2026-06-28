@@ -64,16 +64,7 @@ export class RemotePlayer {
     this.carryOrb.visible = this.carrying;
     if (this.carrying) {
       this._carryTime += dt;
-      const assembly = this.carryOrb.userData.coreAssembly;
-      if (assembly) assembly.rotation.y += dt * 0.85;
-      const pulse = Math.sin(this._carryTime * 6);
-      const materials = new Set(
-        (this.carryOrb.userData.glowParts || []).map((part) => part.material).filter(Boolean),
-      );
-      materials.forEach((material) => {
-        const hot = material === this.carryOrb.userData.glow?.material;
-        material.emissiveIntensity = (hot ? 4.8 : 2.4) + pulse * (hot ? 1.1 : 0.5);
-      });
+      this.carryOrb.userData.updateIdle?.(this._carryTime, 1.12);
     }
     this.anim.update(dt, {
       alive: this.hp > 0, moving, running: false, speedRatio: 1,

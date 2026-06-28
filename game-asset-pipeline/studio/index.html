@@ -471,6 +471,7 @@
           applyAnimation(current, state.animClip, previewTime);
         }
         syncPreviewWeapon();
+        current?.userData?.updateIdle?.(animClock.elapsedTime, 1.05);
         if (state.spin && current) current.rotation.y += 0.006;
         syncRigHelpers();
         controls.update();
