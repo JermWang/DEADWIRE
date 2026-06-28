@@ -229,7 +229,7 @@ export class MainMenu {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.7));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.38;
+    this.renderer.toneMappingExposure = 1.18;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x071014);
     this.scene.fog = new THREE.FogExp2(0x071014, 0.038);
@@ -343,7 +343,9 @@ export class MainMenu {
     const h = canvas.clientHeight || 720;
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 1.18, 0.92, 0.57));
+    // Keep the practical light sources hot, but restrain the screen-space bloom
+    // so the landing page reads as cinematic contrast instead of a washed halo.
+    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.52, 0.42, 0.8));
     this.composer.addPass(new OutputPass());
     this.clock = new THREE.Clock();
     this.running = true;

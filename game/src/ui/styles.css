@@ -214,17 +214,27 @@ html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb {
 .start-mark span, .start-mark b { display: inline; }
 .start-mark span { color: rgba(242,247,249,.96); }
 .start-mark b { color: var(--amber); font-weight: inherit; text-shadow: 0 0 28px rgba(242,169,59,.32); }
-.enter-game { position: relative; min-width: 220px; padding: 14px 25px 13px; color: #fff; background: rgba(12,10,5,.62);
-  border: 1px solid rgba(242,169,59,.58); border-radius: 1px; box-shadow: 0 0 0 1px rgba(0,0,0,.7), 0 16px 45px rgba(0,0,0,.45);
-  cursor: pointer; overflow: hidden; font: inherit; transition: color .25s, border-color .25s, background .25s, transform .25s; }
-.enter-game::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(242,169,59,.18), transparent);
-  transform: translateX(-110%); transition: transform .65s ease; }
-.enter-game span { position: relative; font-size: 11px; font-weight: 950; letter-spacing: .38em; }
-.enter-game i { position: absolute; left: 50%; bottom: 6px; width: 28px; height: 1px; background: var(--amber);
-  box-shadow: 0 0 9px var(--amber); transform: translateX(-50%); transition: width .25s; }
-.enter-game:hover { color: #fff; background: rgba(28,20,8,.8); border-color: rgba(255,207,111,.9); transform: translateY(-2px); }
-.enter-game:hover::before { transform: translateX(110%); }
-.enter-game:hover i { width: 90px; }
+.enter-game { position: relative; padding: 12px 18px; color: #ffb341; background: transparent; border: 0;
+  cursor: pointer; font: inherit; text-shadow: 0 0 8px rgba(242,169,59,.72), 0 0 24px rgba(242,169,59,.2);
+  transform: translateY(-2px); transition: color .2s ease, filter .2s ease, transform .2s ease; }
+.enter-game::before { content: 'ENTER GAME'; position: absolute; inset: 12px 18px; color: rgba(255,126,47,.2);
+  transform: translate(2px, 1px); mix-blend-mode: screen; pointer-events: none; }
+.enter-game span { position: relative; display: inline-block; font-family: "Courier New", "Lucida Console", monospace;
+  font-size: 14px; font-weight: 900; letter-spacing: .5em; line-height: 1; color: currentColor;
+  text-transform: uppercase; animation: enter-game-blink 2.35s steps(1, end) infinite;
+  -webkit-text-stroke: .35px rgba(255,221,151,.34); }
+.enter-game span::after { content: ''; position: absolute; left: 0; right: .46em; top: 52%; height: 1px;
+  background: rgba(8,7,4,.72); box-shadow: 0 -4px rgba(8,7,4,.26), 0 4px rgba(8,7,4,.22);
+  opacity: .5; pointer-events: none; }
+.enter-game i { display: none; }
+.enter-game:hover { color: #ffd27d; filter: brightness(1.18); transform: translateY(-4px); }
+.enter-game:hover span { animation-duration: 1.65s; }
+@keyframes enter-game-blink {
+  0%, 68%, 100% { opacity: 1; filter: brightness(1); }
+  72%, 80% { opacity: .32; filter: brightness(.65); }
+  84% { opacity: .82; filter: brightness(1.16); }
+  88% { opacity: .45; filter: brightness(.74); }
+}
 .start-links { position: absolute; left: 26px; right: 26px; bottom: 21px; display: flex; align-items: flex-end;
   justify-content: space-between; gap: 20px; }
 .contract-link { min-width: 0; max-width: min(520px, 74vw); padding: 0; display: flex; align-items: center; gap: 10px; color: #718286;
@@ -271,7 +281,7 @@ html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb {
 /* ---------- Squad lobby ---------- */
 .lobby { position: absolute; inset: 0; overflow: hidden; pointer-events: auto; color: var(--text);
   background: #11191e; isolation: isolate; }
-#lobbyCanvas { position: absolute; inset: 0; z-index: -2; width: 100%; height: 100%; display: block; }
+#lobbyCanvas { position: absolute; inset: 0; z-index: -2; width: 100%; height: 100%; display: block; pointer-events: none; }
 .lobby-wash { position: absolute; inset: 0; z-index: -1; pointer-events: none;
   background:
     linear-gradient(90deg, rgba(7,12,15,.86) 0, rgba(7,12,15,.12) 28%, transparent 48%, rgba(7,12,15,.13) 72%, rgba(7,12,15,.82) 100%),
