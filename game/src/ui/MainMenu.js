@@ -112,6 +112,7 @@ export class MainMenu {
     this.entering = false;
     this.crawlers = [];
     this.warningLights = [];
+    this.electricalLights = [];
     this.pointer = new THREE.Vector2();
     this._onPointerMove = (event) => {
       this.pointer.x = (event.clientX / Math.max(1, innerWidth) - 0.5) * 2;
@@ -179,6 +180,7 @@ export class MainMenu {
     const loadout = {
       ...(profile.equipped || {}),
       _colors: { jacket: profile.tint || '#3b4a5a' },
+      _primaryWeapon: profile.primaryWeapon || 'weapon_scrap_pistol',
     };
     setTimeout(() => {
       this.destroy();
@@ -195,15 +197,42 @@ export class MainMenu {
     return asset;
   }
 
+  _addElectricalFixture(x, y, z, {
+    color = 0xffc85e,
+    intensity = 10,
+    distance = 10,
+    vertical = false,
+    phase = Math.random() * Math.PI * 2,
+  } = {}) {
+    const fixture = new THREE.Group();
+    fixture.position.set(x, y, z);
+    const housing = new THREE.Mesh(
+      new THREE.BoxGeometry(vertical ? 0.24 : 1.15, vertical ? 1.15 : 0.24, 0.18),
+      mat('#20292b', { metal: 0.72, rough: 0.48 }),
+    );
+    const tube = new THREE.Mesh(
+      new THREE.BoxGeometry(vertical ? 0.08 : 0.88, vertical ? 0.88 : 0.08, 0.05),
+      mat(color, { emissive: color, emissiveIntensity: 5.5, rough: 0.2 }),
+    );
+    tube.position.z = 0.12;
+    fixture.add(housing, tube);
+    const light = new THREE.PointLight(color, intensity, distance, 2);
+    light.position.z = 0.45;
+    fixture.add(light);
+    fixture.userData.electrical = { light, tube, intensity, phase };
+    this.electricalLights.push(fixture);
+    this.scene.add(fixture);
+  }
+
   _initScene() {
     const canvas = this.el.querySelector('#reactorCanvas');
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.7));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.92;
+    this.renderer.toneMappingExposure = 1.38;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x020405);
-    this.scene.fog = new THREE.FogExp2(0x05090a, 0.048);
+    this.scene.background = new THREE.Color(0x071014);
+    this.scene.fog = new THREE.FogExp2(0x071014, 0.038);
 
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 160);
     this.camera.position.set(0.2, 2.15, 9.8);
@@ -211,7 +240,7 @@ export class MainMenu {
 
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(34, 44, 1, 1),
-      new THREE.MeshStandardMaterial({ color: 0x111719, metalness: 0.62, roughness: 0.82 }),
+      new THREE.MeshStandardMaterial({ color: 0x182327, metalness: 0.58, roughness: 0.76 }),
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(0, -0.02, -8);
@@ -251,6 +280,12 @@ export class MainMenu {
     this._place('rail_track', 0, 0.012, -8, 1.1);
     this._place('prop_loot_crate', -2.7, 0, -8.4, 0.92, 0.55);
     this._place('prop_loot_crate', 3.4, 0, -11.2, 0.8, -0.34);
+    this._addElectricalFixture(-5.75, 3.6, -2.2, { color: 0xffc85e, intensity: 13, distance: 12 });
+    this._addElectricalFixture(5.75, 4.35, -4.8, { color: 0xf2f7ef, intensity: 15, distance: 13, vertical: true });
+    this._addElectricalFixture(-5.75, 5.4, -10.4, { color: 0xffd36f, intensity: 11, distance: 11, vertical: true });
+    this._addElectricalFixture(5.75, 2.2, -12.2, { color: 0xf7fbf2, intensity: 12, distance: 11 });
+    this._addElectricalFixture(-3.9, 5.8, -16.35, { color: 0xf4f8ed, intensity: 15, distance: 14 });
+    this._addElectricalFixture(3.9, 5.8, -16.35, { color: 0xffbd42, intensity: 14, distance: 14, phase: 1.8 });
 
     for (const [x, z, phase, scale] of [
       [-3.45, -0.8, 0.2, 1.08],
@@ -269,22 +304,23 @@ export class MainMenu {
     this.turret = this._place('enemy_turret', 4.8, 0, -6.8, 0.86, -2.2);
     this.hauler = this._place('enemy_hauler', -5.1, 0, -14.1, 0.9, 0.35);
 
-    this.scene.add(new THREE.HemisphereLight(0x31505a, 0x0c0807, 0.66));
-    const coreLight = new THREE.PointLight(0xa871ff, 18, 17, 2);
+    this.scene.add(new THREE.HemisphereLight(0xe8efe5, 0x1b1610, 1.28));
+    this.scene.add(new THREE.AmbientLight(0xdce5df, 0.42));
+    const coreLight = new THREE.PointLight(0xffc34e, 25, 18, 2);
     coreLight.position.set(0, 1.35, -4.6);
     this.scene.add(coreLight);
     this.coreLight = coreLight;
-    const redLight = new THREE.PointLight(0xff2416, 9, 13, 2);
+    const redLight = new THREE.PointLight(0xff311f, 10, 14, 2);
     redLight.position.set(-4.5, 2.4, -9);
     this.scene.add(redLight);
     this.redLight = redLight;
-    const foregroundFill = new THREE.PointLight(0x2c8997, 6.5, 12, 2);
+    const foregroundFill = new THREE.PointLight(0xf4f8ed, 12.5, 16, 2);
     foregroundFill.position.set(3.4, 1.25, 2.5);
     this.scene.add(foregroundFill);
-    const crawlerRim = new THREE.PointLight(0xc9341f, 7.5, 9, 2);
+    const crawlerRim = new THREE.PointLight(0xe94b2b, 8.8, 10, 2);
     crawlerRim.position.set(-4.4, 0.85, 1.2);
     this.scene.add(crawlerRim);
-    const shaft = new THREE.SpotLight(0x9bdce6, 13, 36, 0.36, 0.8, 1.8);
+    const shaft = new THREE.SpotLight(0xffefc5, 21, 39, 0.42, 0.82, 1.8);
     shaft.position.set(1.5, 10, 2);
     shaft.target.position.set(0, 0, -7);
     this.scene.add(shaft, shaft.target);
@@ -307,7 +343,7 @@ export class MainMenu {
     const h = canvas.clientHeight || 720;
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 0.88, 0.82, 0.68));
+    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(w, h), 1.18, 0.92, 0.57));
     this.composer.addPass(new OutputPass());
     this.clock = new THREE.Clock();
     this.running = true;
@@ -360,8 +396,15 @@ export class MainMenu {
     if (this.turret) this.turret.rotation.y = -2.2 + Math.sin(time * 0.24) * 0.72;
     if (this.hauler) this.hauler.position.z = -14.1 + Math.sin(time * 0.18) * 1.1;
     if (this.dust) this.dust.rotation.y = time * 0.006;
-    this.coreLight.intensity = 11 + Math.sin(time * 2.1) * 3.2;
+    this.coreLight.intensity = 18 + Math.sin(time * 2.1) * 4.2;
     this.redLight.intensity = Math.sin(time * 3.8) > 0.72 ? 12 : 3.8;
+    this.electricalLights.forEach((fixture, index) => {
+      const electric = fixture.userData.electrical;
+      const flutter = Math.sin(time * (7.5 + index * 0.7) + electric.phase);
+      const pulse = flutter > 0.93 ? 0.58 : 1;
+      electric.light.intensity = electric.intensity * pulse;
+      electric.tube.material.emissiveIntensity = 4.8 + pulse * 1.5;
+    });
     this.composer.render(dt);
   }
 

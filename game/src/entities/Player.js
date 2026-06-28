@@ -7,13 +7,18 @@ import { PlayerAnimator } from './PlayerAnimator.js';
 
 export class Player {
   constructor(cosmetics = {}) {
-    const { _colors = {}, ...equipped } = cosmetics;
+    const { _colors = {}, _primaryWeapon = 'weapon_scrap_pistol', ...equipped } = cosmetics;
     this.mesh = buildAsset('char_runner', { pose: 'aim', colors: _colors });
     this.mesh.updateWorldMatrix(true, true);
     this.grip = this.mesh.getObjectByName(this.mesh.userData.weaponSocketName || 'hand_r') || this.mesh;
 
     // build the weapon loadout, mount all on the forward grip, show only the active
-    this.loadout = CONFIG.loadout.map((key) => CONFIG.weapons[key]);
+    const weaponKeys = [...CONFIG.loadout].sort((a, b) => {
+      if (CONFIG.weapons[a].id === _primaryWeapon) return -1;
+      if (CONFIG.weapons[b].id === _primaryWeapon) return 1;
+      return 0;
+    });
+    this.loadout = weaponKeys.map((key) => ({ ...CONFIG.weapons[key] }));
     this.weapons = this.loadout.map((def) => {
       const w = buildAsset(def.id);
       w.visible = false;

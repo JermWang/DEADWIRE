@@ -10,7 +10,9 @@ import { Player } from '../entities/Player.js';
 import { Enemy } from '../entities/Enemy.js';
 import { Projectile } from '../entities/Projectile.js';
 import { LootCrate } from '../entities/LootCrate.js';
+import { GoldTokenPickup } from '../entities/GoldTokenPickup.js';
 import { UnstableCore } from '../entities/UnstableCore.js';
+import { InsertionPod } from '../entities/InsertionPod.js';
 import { ExtractionZone } from '../entities/ExtractionZone.js';
 import { Hud } from '../ui/Hud.js';
 import { showResults } from '../ui/Results.js';
@@ -26,6 +28,7 @@ import { makeSky } from '../render/Sky.js';
 import { disposeObjectTree } from '../render/dispose.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildAsset, mat, PALETTE } from '../assets.js';
+import { chooseCoreTier, estimateCoreTokenValue, runUpgradeModifiers } from '../data/economy.js';
 
 export class Game {
   constructor(canvas, uiRoot) {
@@ -82,6 +85,135 @@ export class Game {
     this.scene.add(fill);
   }
 
+  _facePlayerTowardCenter() {
+    if (!this.player) return;
+    const dir = new THREE.Vector3().subVectors(new THREE.Vector3(0, 0, 0), this.player.position);
+    if (dir.lengthSq() < 0.01) return;
+    this.rig.yaw = Math.atan2(dir.x, dir.z);
+    this.player.facing = this.rig.yaw;
+    this.player.mesh.rotation.y = this.player.facing;
+  }
+
+  _beginInsertionSequence(totalOverride) {
+    const total = totalOverride ?? CONFIG.match.insertionCountdownSec ?? 0;
+    if (!total) return;
+    this.insertion = { total, remaining: total, launch: 0, released: false, lastSecond: null };
+    this.insertionPods = [];
+    if (this.player?.mesh) this.player.mesh.visible = false;
+    const spawnIndices = CONFIG.match.insertionPodSpawns || [5];
+    for (const [podIndex, spawnIndex] of spawnIndices.entries()) {
+      const sp = this.map.def.spawnPoints[spawnIndex] || this.map.def.spawnPoints[0];
+      const position = new THREE.Vector3(sp[0], 0, sp[1]);
+      const occupied = spawnIndex === 5;
+      const pod = new InsertionPod(position, { index: podIndex, occupied });
+      this.scene.add(pod.root);
+      this.insertionPods.push(pod);
+    }
+    this.hud.setObjective('Insertion pods descending - face inward until GO');
+    this.hud.banner('SQUAD INSERTION // BRACE', 1200);
+  }
+
+  _updateInsertionSequence(dt) {
+    if (!this.insertion) return false;
+    const sequence = this.insertion;
+    const blocking = !sequence.released;
+    const descentProgress = 1 - Math.max(0, sequence.remaining) / sequence.total;
+    const launchProgress = sequence.released ? Math.min(1, sequence.launch / 2.25) : 0;
+    const thrust = sequence.released ? 1 : (descentProgress < 0.95 ? 1 : 0.3);
+    this.insertionPods?.forEach((pod) => pod.update(dt, this.t, { descentProgress, launchProgress, thrust }));
+    this._updateInsertionCamera(dt, descentProgress, launchProgress);
+    this.hud.setAimHint(false);
+
+    if (!sequence.released) {
+      sequence.remaining -= dt;
+      const seconds = Math.max(0, Math.ceil(sequence.remaining));
+      this.hud.setTimer(seconds);
+      this.hud.setObjective(seconds > 0 ? `Drop in ${seconds} - pods facing reactor center` : 'GO - clear the pod');
+      if (seconds !== sequence.lastSecond && seconds > 0) {
+        sequence.lastSecond = seconds;
+        this.hud.banner(String(seconds), 420);
+      }
+      if (sequence.remaining <= 0) {
+        sequence.released = true;
+        if (this.player?.mesh) this.player.mesh.visible = true;
+        this._facePlayerTowardCenter();
+        this.rig.snap(this.player.position);
+        this.hud.banner('GO // PODS CLEARING', 1200);
+        this.hud.setObjective('Loot, survive, secure the core');
+        this.rig.addShake(0.5);
+      }
+      return true;
+    }
+
+    sequence.launch += dt;
+    if (sequence.launch >= 2.25) {
+      this._disposeInsertionPods();
+      this.insertion = null;
+    }
+    return blocking;
+  }
+
+  _updateInsertionCamera(dt, descentProgress, launchProgress) {
+    if (!this.player) return;
+    const camera = this.rig.camera;
+    const player = this.player.position;
+    const center = this.core?.position || new THREE.Vector3(0, 0, 0);
+    const outward = new THREE.Vector3(player.x - center.x, 0, player.z - center.z);
+    if (outward.lengthSq() < 0.01) outward.set(0, 0, -1);
+    outward.normalize();
+    const right = new THREE.Vector3(outward.z, 0, -outward.x);
+    const pullback = 22 - descentProgress * 5 + launchProgress * 4;
+    const height = 11 + (1 - descentProgress) * 5 + launchProgress * 4;
+    const targetPos = new THREE.Vector3()
+      .copy(player)
+      .addScaledVector(outward, pullback)
+      .addScaledVector(right, -7)
+      .setY(height);
+    camera.position.lerp(targetPos, Math.min(1, dt * 8));
+    const lookTarget = new THREE.Vector3(
+      center.x * 0.55 + player.x * 0.45,
+      2.8 + descentProgress * 1.2,
+      center.z * 0.55 + player.z * 0.45,
+    );
+    camera.lookAt(lookTarget);
+    camera.fov += ((launchProgress > 0 ? 66 : 58) - camera.fov) * Math.min(1, dt * 5);
+    camera.updateProjectionMatrix();
+  }
+
+  _disposeInsertionPods() {
+    for (const pod of this.insertionPods || []) {
+      this.scene.remove(pod.root);
+      disposeObjectTree(pod.root);
+    }
+    this.insertionPods = [];
+  }
+
+  _serverInsertionRemaining() {
+    if (this.insertionServerRemaining == null) return null;
+    const syncedAt = this.insertionServerSyncedAt ?? performance.now();
+    return Math.max(0, this.insertionServerRemaining - (performance.now() - syncedAt) / 1000);
+  }
+
+  _ammoMax() {
+    return CONFIG.player.ammoMax + (this.runMods?.ammoMaxBonus || 0);
+  }
+
+  _extractHoldSec() {
+    return CONFIG.player.extractHoldSec * (this.runMods?.extractHoldMultiplier || 1);
+  }
+
+  _applyProgressionToPlayer() {
+    if (!this.player || !this.runMods) return;
+    const mods = this.runMods;
+    this.player.ammo = Math.min(this._ammoMax(), CONFIG.match.loadoutAmmo + mods.deployAmmoBonus);
+    this.player.loadout = this.player.loadout.map((def) => ({
+      ...def,
+      damage: Math.round(def.damage * mods.weaponDamageMultiplier),
+      fireRate: +(def.fireRate * mods.weaponFireRateMultiplier).toFixed(2),
+      projectileSpeed: +(def.projectileSpeed * mods.projectileSpeedMultiplier).toFixed(2),
+    }));
+  }
+
   start(cosmetics = {}, online = false, name = 'Runner') {
     this._reset();
     this.input.keys.clear();        // drop any keys held from the deploy/results screen
@@ -91,6 +223,9 @@ export class Game {
     this.remotes = new Map();
     this.stateTimer = 0;
     this.corePickupSent = false;
+    this.stashAtDeploy = Stash.load();
+    this.runMods = runUpgradeModifiers(this.stashAtDeploy);
+    this.coreTier = chooseCoreTier(Math.random, this.stashAtDeploy);
     this.net = online ? new WebSocketNet(matchWsBase()) : new LocalNet();
 
     // world
@@ -102,10 +237,12 @@ export class Game {
     const sp = this.map.def.spawnPoints[5]; // south road start
     this.player.mesh.position.set(sp[0], 0, sp[1]);
     this.scene.add(this.player.mesh);
+    this._applyProgressionToPlayer();
+    this._facePlayerTowardCenter();
     this.rig.snap(this.player.position);
 
     // The extracted object remains visually legible in the runner's off hand.
-    this.carryOrb = buildAsset('obj_unstable_core', { variant: 'carry' });
+    this.carryOrb = buildAsset('obj_unstable_core', { variant: 'carry', tier: this.coreTier });
     this.carryOrb.scale.setScalar(0.46);
     this.carryOrb.rotation.set(0.2, 0.25, -0.1);
     this.carryOrb.position.set(0, 0, 0.1);
@@ -128,7 +265,15 @@ export class Game {
       const crate = new LootCrate(new THREE.Vector3(c[0], c[2] ?? 0, c[1]));
       this.scene.add(crate.mesh); return crate;
     });
-    this.core = new UnstableCore(new THREE.Vector3(this.map.def.coreSpawn[0], 0, this.map.def.coreSpawn[1]));
+    this.goldTokens = (this.map.def.goldTokenSpawns || []).map((spawn) => {
+      const token = new GoldTokenPickup(
+        new THREE.Vector3(spawn.pos[0], spawn.pos[1] ?? 0, spawn.pos[2]),
+        { qty: spawn.qty || 1 },
+      );
+      this.scene.add(token.mesh);
+      return token;
+    });
+    this.core = new UnstableCore(new THREE.Vector3(this.map.def.coreSpawn[0], 0, this.map.def.coreSpawn[1]), this.coreTier.id);
     this.scene.add(this.core.mesh);
     this.extracts = this.map.def.extractionZones.map((z) => {
       const ez = new ExtractionZone(new THREE.Vector3(z.pos[0], 0, z.pos[1]), z.radius);
@@ -172,6 +317,8 @@ export class Game {
     this.hud.setWeapon(this.player.loadout.map((w) => w.name), this.player.weaponIndex);
     this.hud.setAmmo(this.player.ammo);
     this.hud.banner('DEPLOYED · Breaker Yard');
+    this.insertionPending = true;
+    this.hud.setObjective('Insertion pods waiting for drop clearance');
 
     // reusable muzzle flash quad
     this.flash = new THREE.Mesh(
@@ -191,6 +338,18 @@ export class Game {
     if (!this._raf) this._loop();
   }
 
+  beginInsertionSequence() {
+    if (!this.insertionPending || this.insertion) return;
+    this.insertionPending = false;
+    const serverRemaining = this.online ? this._serverInsertionRemaining() : null;
+    if (serverRemaining != null && serverRemaining <= 0.15) {
+      this.hud.setObjective('Loot, survive, secure the core');
+      this.hud.banner('GO // PODS CLEARING', 1200);
+      return;
+    }
+    this._beginInsertionSequence(serverRemaining ?? undefined);
+  }
+
   // ---- networking ----
   _wireNet() {
     this.net.on('welcome', (m) => this._onWelcome(m));
@@ -200,14 +359,29 @@ export class Game {
     this.net.on('fire', (m) => this._remoteTracer(m));
     this.net.on('hurt', (m) => this._hurtPlayer(m.dmg));
     this.net.on('crate_open', (m) => this._reflectCrateOpen(m.index));
-    this.net.on('core_spawn', (m) => { if (!this.coreSpawned) this._spawnCore(); });
+    this.net.on('core_spawn', (m) => { if (m?.tier) this._setCoreTier(m.tier); if (!this.coreSpawned) this._spawnCore(); });
     this.net.on('core_state', (m) => this._onCoreState(m));
     this.net.on('core_denied', () => this.hud.banner('Core already taken', 1600));
   }
 
   _onWelcome(m) {
     this.localId = m.id;
-    if (m.match) this.timeLeft = m.match.durationSec - m.match.elapsed;
+    if (m.match) {
+      this.timeLeft = m.match.durationSec - Math.max(0, m.match.elapsed || 0);
+      if (m.match.insertionRemaining != null) {
+        this.insertionServerRemaining = Math.max(0, Number(m.match.insertionRemaining) || 0);
+        this.insertionServerSyncedAt = performance.now();
+        const serverRemaining = this._serverInsertionRemaining();
+        if (this.insertion) {
+          this.insertion.remaining = Math.min(this.insertion.remaining, serverRemaining);
+          if (serverRemaining <= 0.15) this.insertion.remaining = 0;
+        } else if (this.insertionPending && serverRemaining <= 0.15) {
+          this.insertionPending = false;
+          this.hud.setObjective('Loot, survive, secure the core');
+        }
+      }
+    }
+    if (m.core?.tier) this._setCoreTier(m.core.tier);
     for (const p of m.players || []) this._addRemote(p);
     if (m.core?.spawned && !this.coreSpawned) this._spawnCore();
     if (m.core?.carrierId) this._onCoreState({ carrierId: m.core.carrierId });
@@ -237,15 +411,44 @@ export class Game {
     if (c && !c.opened) { c.open(); } // mark opened + visual; no loot for the observer
   }
 
-  _spawnCore() { this.coreSpawned = true; this.core.spawn(); this.hud.siren(); this.rig.addShake(0.6); this.hud.banner('⚠ REACTOR CORE ONLINE', 2600); this.hud.setObjective('Secure the reactor core and extract'); }
+  _spawnCore() {
+    this.coreSpawned = true;
+    this.core.spawn();
+    this.hud.siren();
+    this.rig.addShake(0.6);
+    this.hud.banner(`${this.core.tier.label.toUpperCase()} ONLINE`, 2600);
+    this.hud.setObjective(`Secure the ${this.core.tier.label} and extract`);
+  }
+
+  _setCoreTier(tierId) {
+    if (!this.core || this.core.tier?.id === tierId) return;
+    const oldMesh = this.core.mesh;
+    this.scene.remove(oldMesh);
+    disposeObjectTree(oldMesh);
+    this.core.setTier(tierId);
+    this.coreTier = this.core.tier;
+    this.scene.add(this.core.mesh);
+
+    if (!this.carryOrb) return;
+    const parent = this.carryOrb.parent;
+    const oldCarry = this.carryOrb;
+    parent?.remove(oldCarry);
+    disposeObjectTree(oldCarry);
+    this.carryOrb = buildAsset('obj_unstable_core', { variant: 'carry', tier: this.core.tier });
+    this.carryOrb.scale.setScalar(0.46);
+    this.carryOrb.rotation.set(0.2, 0.25, -0.1);
+    this.carryOrb.position.set(0, 0, 0.1);
+    this.carryOrb.visible = this.player?.carryingCore || false;
+    parent?.add(this.carryOrb);
+  }
 
   _onCoreState(m) {
     // authoritative core ownership from the server
     if (m.carrierId === this.localId) {
       // granted to me
       this.core.pickUp(this.player); this.carryOrb.visible = true;
-      this.hud.setCore('carrying'); this.hud.banner('REACTOR CORE SECURED — extract it', 2400);
-      this.hud.setObjective('Extract the reactor core (south road)');
+      this.hud.setCore('carrying'); this.hud.banner(`${this.core.tier.label.toUpperCase()} SECURED — extract it`, 2400);
+      this.hud.setObjective(`Extract the ${this.core.tier.label} (south road)`);
     } else if (m.carrierId) {
       // a remote holds it
       if (this.player.carryingCore) { this.player.carryingCore = false; this.carryOrb.visible = false; this.hud.setCore(''); }
@@ -283,7 +486,7 @@ export class Game {
       this.map.dispose?.();
     }
     if (this.hud) this.hud.el.remove();
-    for (const arr of ['enemies', 'crates', 'extracts']) {
+    for (const arr of ['enemies', 'crates', 'goldTokens', 'extracts']) {
       (this[arr] || []).forEach((o) => {
         const root = o.mesh || o.group;
         this.scene.remove(root);
@@ -293,6 +496,7 @@ export class Game {
     (this.projectiles || []).forEach((p) => { this.scene.remove(p.mesh); disposeObjectTree(p.mesh); });
     (this.particles || []).forEach((p) => { this.scene.remove(p.mesh); disposeObjectTree(p.mesh); });
     this.particles = [];
+    this._disposeInsertionPods();
     if (this.player) { this.scene.remove(this.player.mesh); disposeObjectTree(this.player.mesh); }
     if (this.core) { this.scene.remove(this.core.mesh); disposeObjectTree(this.core.mesh); }
     if (this.pingRing) { this.scene.remove(this.pingRing); disposeObjectTree(this.pingRing); }
@@ -309,6 +513,9 @@ export class Game {
     this.run = { loot: {}, machines: 0, players: 0, coreExtracted: false, coreLost: false };
     this.defeatedRemoteIds = new Set();
     this.coreSpawned = false;
+    this.insertionPending = false;
+    this.insertionServerRemaining = null;
+    this.insertionServerSyncedAt = null;
     this.pingTimer = CONFIG.player.pingIntervalSec;
     this.extractHold = 0;
     this.pingFx = 0;
@@ -322,6 +529,7 @@ export class Game {
     if (this.state === 'playing') this._update(dt);
     this.map?.update(dt, this.t);
     this.core?.update(dt);
+    this.goldTokens?.forEach((token) => token.update(dt, this.t));
     this.extracts?.forEach((e) => e.update(dt));
     this.hud?.update(dt, this.renderer);
     if (this.sky) this.sky.position.copy(this.rig.camera.position);
@@ -330,6 +538,13 @@ export class Game {
   }
 
   _update(dt) {
+    if (this.insertionPending) {
+      const serverRemaining = this.online ? this._serverInsertionRemaining() : null;
+      this.hud.setTimer(serverRemaining ?? CONFIG.match.insertionCountdownSec ?? this.timeLeft);
+      return;
+    }
+    if (this._updateInsertionSequence(dt)) return;
+
     // ---- match timer ----
     this.timeLeft -= dt;
     this.hud.setTimer(this.timeLeft);
@@ -365,7 +580,7 @@ export class Game {
 
     let speed = running ? CONFIG.player.runSpeed : CONFIG.player.moveSpeed;
     if (aiming) speed *= 0.72;
-    if (this.player.carryingCore) speed *= CONFIG.player.coreSlowFactor;
+    if (this.player.carryingCore) speed *= (this.runMods?.coreCarrySpeedFactor || CONFIG.player.coreSlowFactor);
     if (this.player.alive) {
       if (this.player.rolling) this.player.position.addScaledVector(this.player.rollDir, CONFIG.player.rollSpeed * dt);
       else this.player.position.addScaledVector(mv, speed * dt);
@@ -679,12 +894,31 @@ export class Game {
     const pos = this.player.position;
     let prompt = '';
 
+    // rare physical gold token gets priority over regular crates.
+    let nearGoldToken = null, ngd = Infinity;
+    for (const token of this.goldTokens || []) {
+      if (token.collected) continue;
+      const d = pos.distanceTo(token.position);
+      if (d < token.interactRange && d < ngd) { ngd = d; nearGoldToken = token; }
+    }
+    if (nearGoldToken) {
+      prompt = '[E] Secure gold token';
+      if (this.input.pressed('e')) {
+        const drops = nearGoldToken.collect();
+        for (const d of drops) this.run.loot[d.item] = (this.run.loot[d.item] || 0) + d.qty;
+        this.hud.setLoot(this.run.loot);
+        this.hud.banner('Gold token secured', 1800);
+      }
+    }
+
     // nearest unopened crate
     let nearCrate = null, nd = Infinity;
-    for (const c of this.crates) {
-      if (c.opened) continue;
-      const d = pos.distanceTo(c.position);
-      if (d < c.interactRange && d < nd) { nd = d; nearCrate = c; }
+    if (!nearGoldToken) {
+      for (const c of this.crates) {
+        if (c.opened) continue;
+        const d = pos.distanceTo(c.position);
+        if (d < c.interactRange && d < nd) { nd = d; nearCrate = c; }
+      }
     }
     if (nearCrate) {
       prompt = '[E] Open crate';
@@ -693,7 +927,7 @@ export class Game {
         for (const d of drops) {
           this.run.loot[d.item] = (this.run.loot[d.item] || 0) + d.qty;
           if (d.item === 'Ammo') {   // looted ammo refills your run pool
-            this.player.ammo = Math.min(CONFIG.player.ammoMax, this.player.ammo + d.qty);
+            this.player.ammo = Math.min(this._ammoMax(), this.player.ammo + d.qty);
             this.hud.setAmmo(this.player.ammo);
           }
         }
@@ -707,7 +941,7 @@ export class Game {
     if (this.core.spawned && !this.core.carrier && !this.player.carryingCore) {
       const d = pos.distanceTo(this.core.position);
       if (d < this.core.interactRange) {
-        prompt = '[E] Take reactor core';
+        prompt = `[E] Take ${this.core.tier.label}`;
         if (this.input.pressed('e')) {
           if (this.online) {
             this.net.send({ t: 'core_pickup' });
@@ -716,8 +950,8 @@ export class Game {
             this.core.pickUp(this.player);
             this.carryOrb.visible = true;
             this.hud.setCore('carrying');
-            this.hud.banner('REACTOR CORE SECURED — extract before they find you', 2600);
-            this.hud.setObjective('Extract the reactor core (south road)');
+            this.hud.banner(`${this.core.tier.label.toUpperCase()} SECURED — extract before they find you`, 2600);
+            this.hud.setObjective(`Extract the ${this.core.tier.label} (south road)`);
           }
         }
       }
@@ -730,9 +964,10 @@ export class Game {
     }
     if (inZone) {
       this.extractHold += dt;
-      const remain = Math.max(0, CONFIG.player.extractHoldSec - this.extractHold);
+      const extractHoldSec = this._extractHoldSec();
+      const remain = Math.max(0, extractHoldSec - this.extractHold);
       prompt = `Extracting… ${remain.toFixed(1)}s  (stay in zone)`;
-      if (this.extractHold >= CONFIG.player.extractHoldSec) return this._extract();
+      if (this.extractHold >= extractHoldSec) return this._extract();
     } else {
       this.extractHold = 0;
     }
@@ -821,10 +1056,18 @@ export class Game {
 
     let xp = 0;
     const loot = [];
+    const stashBeforeRun = Stash.load();
+    let coreValueTokens = 0;
     if (extracted) {
       xp += CONFIG.rewards.extractXP;
       for (const [item, qty] of Object.entries(this.run.loot)) loot.push({ item, qty });
-      if (this.run.coreExtracted) { xp += CONFIG.rewards.coreBonusXP; loot.push({ item: 'Reactor Core', qty: 1 }); }
+      if (this.run.coreExtracted) {
+        const tier = this.core?.tier || this.coreTier;
+        xp += tier.xpBonus ?? CONFIG.rewards.coreBonusXP;
+        loot.push({ item: tier.item, qty: 1 });
+        loot.push({ item: 'Core Shard', qty: (tier.shardYield || 1) + (this.runMods?.shardBonus || 0) });
+        coreValueTokens = estimateCoreTokenValue(tier.id, this.run, stashBeforeRun);
+      }
     }
     xp += this.run.machines * CONFIG.rewards.perMachineXP;
 
@@ -835,6 +1078,8 @@ export class Game {
       players: this.run.players,
       coreExtracted: this.run.coreExtracted,
       coreLost: this.run.coreLost,
+      coreTier: this.run.coreExtracted ? (this.core?.tier?.id || this.coreTier.id) : null,
+      coreValueTokens,
       xp,
     };
     const stash = Stash.applyRun(results);

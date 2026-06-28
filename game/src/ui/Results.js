@@ -1,17 +1,30 @@
 // Results — end-of-run screen. Shows extracted loot, kills, core status, XP, stash.
+import { formatDeadTokens, getCoreTier } from '../data/economy.js';
+
+const GOLD_TOKEN_IMAGE_URL = '/dead%20gold%20token.png';
+
+function itemLabel(item) {
+  if (item !== 'Gold') return item;
+  return `<span class="gold-token-label"><img src="${GOLD_TOKEN_IMAGE_URL}" alt="" />Gold</span>`;
+}
+
 export function showResults(root, results, stash, { onReplay, onMenu }) {
   const lootRows = results.extracted && results.loot.length
-    ? results.loot.map((l) => `<div class="r-row"><span>${l.item}</span><b>+${l.qty}</b></div>`).join('')
+    ? results.loot.map((l) => `<div class="r-row"><span>${itemLabel(l.item)}</span><b>+${l.qty}</b></div>`).join('')
     : '<div class="r-empty">Nothing extracted</div>';
 
   const stashRows = Object.entries(stash.items)
-    .map(([k, v]) => `<div class="r-row"><span>${k}</span><b>${v}</b></div>`).join('')
+    .map(([k, v]) => `<div class="r-row"><span>${itemLabel(k)}</span><b>${v}</b></div>`).join('')
     || '<div class="r-empty">Stash empty</div>';
 
   const verdict = results.extracted
     ? (results.coreExtracted ? 'REACTOR CORE SECURED' : 'EXTRACTED')
     : 'WIPED';
   const verdictClass = results.extracted ? (results.coreExtracted ? 'win core' : 'win') : 'loss';
+  const coreTier = results.coreTier ? getCoreTier(results.coreTier) : null;
+  const coreStatus = results.coreExtracted && coreTier
+    ? `${coreTier.grade} · ${formatDeadTokens(results.coreValueTokens)} $DEAD est.`
+    : (results.coreLost ? 'Lost' : '—');
 
   const screen = document.createElement('div');
   screen.className = 'results';
@@ -22,7 +35,7 @@ export function showResults(root, results, stash, { onReplay, onMenu }) {
       <div class="r-grid">
         <div class="r-stat"><div class="k">Machines destroyed</div><div class="v">${results.machines}</div></div>
         <div class="r-stat"><div class="k">Runners defeated</div><div class="v">${results.players}</div></div>
-        <div class="r-stat"><div class="k">Reactor core</div><div class="v">${results.coreExtracted ? 'Extracted' : (results.coreLost ? 'Lost' : '—')}</div></div>
+        <div class="r-stat"><div class="k">Reactor core</div><div class="v">${coreStatus}</div></div>
         <div class="r-stat"><div class="k">Reputation XP</div><div class="v">+${results.xp}</div></div>
       </div>
       <div class="r-cols">

@@ -6,6 +6,7 @@
 import http from 'node:http';
 import { attachWS } from './ws.mjs';
 import { CONFIG } from '../game/src/data/config.js';
+import { chooseCoreTier } from '../game/src/data/economy.js';
 
 // Railway (and most PaaS) inject PORT; fall back to MATCH_PORT then the dev default.
 const PORT = Number(process.env.PORT || process.env.MATCH_PORT || 5181);
@@ -15,17 +16,20 @@ const clients = new Map(); // id -> Client
 const lobbies = new Map(); // partyCode -> Map<id, LobbyClient>
 let nextId = 1;
 
-// one persistent room. Clock starts when the first player joins; resets when empty.
+// One persistent room. The first match socket opens the insertion window; the
+// match clock itself starts at GO so the pod countdown does not burn run time.
 const room = {
   startMs: 0,
   coreSpawned: false,
-  core: { carrierId: null, x: CONFIG.map?.coreSpawn?.[0] ?? 0, z: 0 },
+  core: { carrierId: null, x: CONFIG.map?.coreSpawn?.[0] ?? 0, z: 0, tier: chooseCoreTier().id },
   cratesOpened: new Set(),
   players: new Map(), // id -> {id,name,x,z,facing,hp,weapon,carrying}
 };
 
 function now() { return Date.now(); }
-function elapsed() { return room.startMs ? (now() - room.startMs) / 1000 : 0; }
+function insertionMs() { return Math.max(0, Number(CONFIG.match?.insertionCountdownSec || 0) * 1000); }
+function elapsed() { return room.startMs ? Math.max(0, (now() - room.startMs) / 1000) : 0; }
+function insertionRemaining() { return room.startMs ? Math.max(0, (room.startMs - now()) / 1000) : 0; }
 function broadcast(obj, exceptId) {
   const s = JSON.stringify(obj);
   for (const [id, c] of clients) if (id !== exceptId) c.conn.send(s);
@@ -101,7 +105,13 @@ class Client {
   constructor(conn) {
     this.conn = conn;
     this.id = 'p' + (nextId++);
-    if (clients.size === 0) { room.startMs = now(); room.coreSpawned = false; room.core.carrierId = null; room.cratesOpened.clear(); }
+    if (clients.size === 0) {
+      room.startMs = now() + insertionMs();
+      room.coreSpawned = false;
+      room.core.carrierId = null;
+      room.core.tier = chooseCoreTier().id;
+      room.cratesOpened.clear();
+    }
     clients.set(this.id, this);
     const p = { id: this.id, name: 'Runner', x: 0, z: 0, facing: 0, hp: CONFIG.player.maxHealth, weapon: 0, carrying: false };
     room.players.set(this.id, p);
@@ -111,9 +121,15 @@ class Client {
 
     this._send({
       t: 'welcome', id: this.id,
-      match: { durationSec: CONFIG.match.durationSec, coreSpawnSec: CONFIG.match.coreSpawnSec, elapsed: elapsed() },
+      match: {
+        durationSec: CONFIG.match.durationSec,
+        coreSpawnSec: CONFIG.match.coreSpawnSec,
+        elapsed: elapsed(),
+        insertionCountdownSec: CONFIG.match.insertionCountdownSec || 0,
+        insertionRemaining: insertionRemaining(),
+      },
       players: [...room.players.values()].filter((q) => q.id !== this.id),
-      core: { carrierId: room.core.carrierId, x: room.core.x, z: room.core.z, spawned: room.coreSpawned },
+      core: { carrierId: room.core.carrierId, x: room.core.x, z: room.core.z, spawned: room.coreSpawned, tier: room.core.tier },
       crates: [...room.cratesOpened],
     });
     broadcast({ t: 'join', player: p }, this.id);
@@ -169,7 +185,7 @@ setInterval(() => {
   if (!room.startMs || room.coreSpawned) return;
   if (elapsed() >= CONFIG.match.coreSpawnSec) {
     room.coreSpawned = true;
-    broadcast({ t: 'core_spawn', x: room.core.x, z: room.core.z });
+    broadcast({ t: 'core_spawn', x: room.core.x, z: room.core.z, tier: room.core.tier });
     console.log('[match] core online');
   }
 }, 500);

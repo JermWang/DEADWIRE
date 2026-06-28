@@ -6,6 +6,8 @@ export const CONFIG = {
     reactorCoresPerMatch: 1, // hard cap: the current Core Run has one peak-value cube
     coreDetonateSec: 0,      // 0 = core stays until match end / extracted
     loadoutAmmo: 180,        // ammo you deploy with (later: drawn from your base stash)
+    insertionCountdownSec: 4.5,
+    insertionPodSpawns: [5, 0, 1, 2, 3, 4],
   },
   player: {
     moveSpeed: 5.0,          // units/sec
@@ -70,7 +72,7 @@ export const CONFIG = {
       { item: 'Components', min: 1, max: 4, weight: 4 },   // mid · base + gear upgrades
       { item: 'Parts', min: 1, max: 3, weight: 3 },        // mid · weapon parts
       { item: 'Med', min: 1, max: 2, weight: 3 },          // healing supplies
-      { item: 'Gold', min: 2, max: 8, weight: 2 },         // precious · hard currency
+      { item: 'Gold', min: 1, max: 1, weight: 0.12 },      // jackpot · mostly found as rare world tokens
       { item: 'Core Shard', min: 1, max: 1, weight: 1 },   // rare · objective currency
     ],
   },

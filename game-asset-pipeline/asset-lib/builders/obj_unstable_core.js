@@ -6,10 +6,10 @@ import { mat, PALETTE as P } from '../palette.js?v=wii-voxel-toy-v3';
 import { box, cyl, group, socket } from '../prim.js?v=wii-voxel-toy-v3';
 
 export function build(opts = {}) {
-  const { colors = {}, variant = 'world' } = opts;
+  const { colors = {}, tier = null, variant = 'world' } = opts;
   const C = {
-    core: '#fff5ff',
-    energy: '#8545ff',
+    core: tier?.hot || '#fff5ff',
+    energy: tier?.color || '#8545ff',
     cage: '#171827',
     edge: '#35304c',
     base: P.steelDark,
@@ -125,7 +125,8 @@ export function build(opts = {}) {
   g.userData.shards = shards;
   g.userData.radius = 0.48;
   g.userData.interactRange = 1.7;
-  g.userData.rarity = 'apex';
+  g.userData.rarity = tier?.rarity || 'apex';
+  g.userData.tier = tier?.id || 'purple';
   return g;
 }
 

@@ -28,10 +28,22 @@ export class BreakerYard {
   _createGameplayDefinition() {
     const { min, max } = this.mapDefinition.bounds;
     const lootCrates = [];
+    const goldTokenCandidates = [];
     const scalePoint = ([x, z]) => [x * this.layoutScale, z * this.layoutScale];
 
     for (const poi of this.mapDefinition.pois) {
       for (const zone of poi.lootZones) {
+        const highValueZone = ['rare', 'epic', 'legendary'].includes(zone.lootTier) ||
+          (zone.isHidden && poi.dangerLevel >= 4);
+        if (highValueZone && !zone.isLocked) {
+          goldTokenCandidates.push({
+            x: zone.position.x,
+            y: zone.position.y,
+            z: zone.position.z,
+            poi: poi.id,
+            zone: zone.id,
+          });
+        }
         // Locked semantic loot remains visible but does not become a free
         // interactable crate until the key system is wired into gameplay.
         if (zone.isLocked) continue;
@@ -46,6 +58,19 @@ export class BreakerYard {
           lootCrates.push([x, z, zone.position.y]);
         }
       }
+    }
+
+    // Gold is intentionally much closer to a one-per-run objective than normal
+    // crate loot: rare, high-risk, and physically visible when it appears.
+    const goldTokenSpawns = [];
+    if (goldTokenCandidates.length && Math.random() < 0.12) {
+      const pick = goldTokenCandidates[Math.floor(Math.random() * goldTokenCandidates.length)];
+      goldTokenSpawns.push({
+        pos: [pick.x, pick.y, pick.z],
+        qty: 1,
+        poi: pick.poi,
+        zone: pick.zone,
+      });
     }
 
     return {
@@ -64,6 +89,7 @@ export class BreakerYard {
         pos: scalePoint(nest.pos),
       })),
       lootCrates,
+      goldTokenSpawns,
     };
   }
 

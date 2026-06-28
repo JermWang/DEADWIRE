@@ -15,6 +15,7 @@ const DEFAULT_PROFILE = {
   callsign: 'Runner',
   tint: '#3b4a5a',
   title: 'YARD ROOKIE',
+  primaryWeapon: 'weapon_scrap_pistol',
   equipped: {
     face: 'face_dust_mask',
     backpack: 'backpack_runner',
@@ -23,7 +24,55 @@ const DEFAULT_PROFILE = {
   unlockedCosmetics: STARTER_COSMETICS,
 };
 
-const EMPTY = { items: {}, xp: 0, level: 1, runs: 0, extractions: 0, profile: DEFAULT_PROFILE };
+const DEFAULT_PROGRESSION = {
+  baseLevel: 1,
+  weaponLevel: 1,
+  craftingLevel: 1,
+};
+
+const UPGRADE_LIMIT = 10;
+const UPGRADE_DEFS = {
+  base: {
+    key: 'baseLevel',
+    label: 'Base',
+    cost(level) {
+      return {
+        Scrap: 35 + level * 18,
+        Components: 3 + Math.floor(level * 1.25),
+      };
+    },
+  },
+  weapons: {
+    key: 'weaponLevel',
+    label: 'Weapons',
+    cost(level) {
+      return {
+        Parts: 4 + level * 2,
+        Scrap: 22 + level * 12,
+      };
+    },
+  },
+  crafting: {
+    key: 'craftingLevel',
+    label: 'Crafting',
+    cost(level) {
+      return {
+        Components: 4 + level * 2,
+        'Core Shard': Math.max(1, Math.floor(level / 2)),
+      };
+    },
+  },
+};
+
+const EMPTY = {
+  items: {},
+  xp: 0,
+  level: 1,
+  runs: 0,
+  extractions: 0,
+  profile: DEFAULT_PROFILE,
+  progression: DEFAULT_PROGRESSION,
+};
 
 function normalizeProfile(profile = {}) {
   return {
@@ -45,6 +94,7 @@ function normalize(state = {}) {
     ...state,
     items,
     profile: normalizeProfile(state.profile),
+    progression: { ...DEFAULT_PROGRESSION, ...(state.progression || {}) },
   };
 }
 
@@ -70,6 +120,37 @@ export const Stash = {
     const levelOk = !unlock.level || stash.level >= unlock.level;
     const itemOk = !unlock.item || (stash.items?.[unlock.item] || 0) >= (unlock.qty || 1);
     return levelOk && itemOk;
+  },
+
+  upgradeDefs() { return UPGRADE_DEFS; },
+
+  upgradeCost(type, stash = this.load()) {
+    const def = UPGRADE_DEFS[type];
+    if (!def) return null;
+    const level = Math.max(1, Number(stash.progression?.[def.key] || 1));
+    if (level >= UPGRADE_LIMIT) return null;
+    return def.cost(level);
+  },
+
+  canUpgrade(type, stash = this.load()) {
+    const cost = this.upgradeCost(type, stash);
+    if (!cost) return false;
+    return Object.entries(cost).every(([item, qty]) => (stash.items?.[item] || 0) >= qty);
+  },
+
+  upgrade(type) {
+    const def = UPGRADE_DEFS[type];
+    if (!def) return { ok: false, reason: 'unknown' };
+    const s = this.load();
+    const current = Math.max(1, Number(s.progression?.[def.key] || 1));
+    if (current >= UPGRADE_LIMIT) return { ok: false, reason: 'maxed', stash: s };
+    const cost = def.cost(current);
+    const affordable = Object.entries(cost).every(([item, qty]) => (s.items?.[item] || 0) >= qty);
+    if (!affordable) return { ok: false, reason: 'resources', cost, stash: s };
+    for (const [item, qty] of Object.entries(cost)) s.items[item] = Math.max(0, (s.items[item] || 0) - qty);
+    s.progression[def.key] = current + 1;
+    this.save(s);
+    return { ok: true, cost, stash: this.load(), level: current + 1 };
   },
 
   // apply a finished run's results -> returns the updated stash

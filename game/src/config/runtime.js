@@ -27,9 +27,20 @@ export const RUNTIME = {
   xUrl: '',
 };
 
+function runtimeOverride(key) {
+  try {
+    if (typeof location !== 'undefined') {
+      const fromQuery = new URLSearchParams(location.search).get(key);
+      if (fromQuery) return fromQuery;
+    }
+    if (typeof localStorage !== 'undefined') return localStorage.getItem(`deadwire.${key}`);
+  } catch { /* public runtime config best-effort only */ }
+  return '';
+}
+
 // Resolve the websocket base for the match server (handles ws/wss + local dev).
 export function matchWsBase() {
-  const u = RUNTIME.matchServerUrl?.trim();
+  const u = (runtimeOverride('matchServerUrl') || runtimeOverride('match') || RUNTIME.matchServerUrl)?.trim();
   if (u) return u.replace(/^http/i, (m) => (m.toLowerCase() === 'http' ? 'ws' : m)).replace(/\/+$/, '');
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   return `${proto}://${location.hostname}:5181`;

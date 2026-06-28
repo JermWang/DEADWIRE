@@ -68,7 +68,11 @@ async function snapshot(p: any) {
   const { data: rows } = await admin.from("stash_items").select("item,qty").eq("profile_id", p.id);
   const items: Record<string, number> = {};
   for (const r of rows || []) items[r.item] = Number(r.qty);
-  return { items, xp: p.xp, level: p.level, runs: p.runs, extractions: p.extractions, wallet: p.wallet, handle: p.handle };
+  return {
+    items, xp: p.xp, level: p.level, runs: p.runs, extractions: p.extractions,
+    wallet: p.wallet, handle: p.handle,
+    profile: { id: p.id, handle: p.handle, avatar: p.avatar_url || "", title: p.title || "YARD ROOKIE" },
+  };
 }
 async function bumpItem(pid: string, item: string, delta: number) {
   const { data } = await admin.from("stash_items").select("qty").eq("profile_id", pid).eq("item", item).maybeSingle();
@@ -101,6 +105,191 @@ async function handleLogin(body: any) {
   }
   const token = await issueToken(wallet, profile.id);
   return json({ token, stash: await snapshot(profile) });
+}
+
+async function handleDiscordLogin(body: any) {
+  const accessToken = String(body.accessToken || "");
+  if (!accessToken) return json({ error: "missing Discord session" }, 401);
+  const { data: authData, error } = await admin.auth.getUser(accessToken);
+  if (error || !authData?.user) return json({ error: "invalid Discord session" }, 401);
+  const user = authData.user;
+  const provider = user.app_metadata?.provider;
+  if (provider !== "discord") return json({ error: "Discord account required" }, 400);
+  const identity = user.identities?.find((entry: any) => entry.provider === "discord");
+  const metadata = identity?.identity_data || user.user_metadata || {};
+  const discordId = String(metadata.provider_id || metadata.sub || user.id);
+  const display = String(metadata.full_name || metadata.name || metadata.user_name || "Discord Runner");
+  const avatar = String(metadata.avatar_url || "");
+  let discordContacts: Array<{ id: string; username: string; avatar: string }> = [];
+  const providerToken = String(body.providerToken || "");
+  if (providerToken) {
+    try {
+      const response = await fetch("https://discord.com/api/v10/users/@me/relationships", {
+        headers: { Authorization: `Bearer ${providerToken}` },
+      });
+      if (response.ok) {
+        const relationships = await response.json();
+        discordContacts = (Array.isArray(relationships) ? relationships : [])
+          .filter((entry: any) => entry?.type === 1 && entry?.user?.id)
+          .slice(0, 250)
+          .map((entry: any) => ({
+            id: String(entry.user.id),
+            username: String(entry.user.global_name || entry.user.username || "Discord Friend"),
+            avatar: entry.user.avatar
+              ? `https://cdn.discordapp.com/avatars/${entry.user.id}/${entry.user.avatar}.png?size=128`
+              : "",
+          }));
+      }
+    } catch { /* Discord friend import is optional when the scope is unavailable */ }
+  }
+  let { data: profile } = await admin.from("profiles").select("*").eq("discord_id", discordId).maybeSingle();
+  if (!profile) {
+    const base = display.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 16) || "Runner";
+    let handle = base;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { data: taken } = await admin.from("profiles").select("id").ilike("handle", handle).maybeSingle();
+      if (!taken) break;
+      handle = `${base.slice(0, 12)}-${Math.floor(1000 + Math.random() * 9000)}`;
+    }
+    const ins = await admin.from("profiles").insert({
+      discord_id: discordId,
+      handle,
+      avatar_url: avatar,
+      discord_contacts: discordContacts,
+    }).select("*").single();
+    if (ins.error) return json({ error: ins.error.message }, 400);
+    profile = ins.data;
+  } else {
+    const updated = await admin.from("profiles").update({
+      avatar_url: avatar || profile.avatar_url,
+      discord_contacts: discordContacts,
+      updated_at: new Date().toISOString(),
+    }).eq("id", profile.id).select("*").single();
+    profile = updated.data || profile;
+  }
+  const token = await issueToken(`discord:${discordId}`, profile.id);
+  return json({
+    token,
+    stash: await snapshot(profile),
+    profile: { id: profile.id, handle: profile.handle, avatar: profile.avatar_url || "" },
+    discord: { id: discordId, username: display, avatar },
+    discordFriends: discordContacts,
+  });
+}
+
+function cleanHandle(value: unknown) {
+  return String(value || "").trim().replace(/\s+/g, "-");
+}
+
+async function authed(body: any) {
+  return verifyToken(String(body.token || ""));
+}
+
+async function handleProfileUpdate(body: any) {
+  const t = await authed(body);
+  if (!t) return json({ error: "unauthorized" }, 401);
+  const handle = cleanHandle(body.handle);
+  if (!/^[a-zA-Z0-9_-]{3,20}$/.test(handle)) return json({ error: "Username must be 3-20 letters, numbers, _ or -" }, 400);
+  const { data: taken } = await admin.from("profiles").select("id").ilike("handle", handle).neq("id", t.pid).maybeSingle();
+  if (taken) return json({ error: "Username is already in use" }, 409);
+  const { data, error } = await admin.from("profiles").update({ handle, updated_at: new Date().toISOString() })
+    .eq("id", t.pid).select("id,handle,avatar_url,title").single();
+  if (error) return json({ error: error.message }, 400);
+  return json({ profile: { id: data.id, handle: data.handle, avatar: data.avatar_url || "", title: data.title || "YARD ROOKIE" } });
+}
+
+async function handleProfilesSearch(body: any) {
+  const t = await authed(body);
+  if (!t) return json({ error: "unauthorized" }, 401);
+  const query = cleanHandle(body.query).slice(0, 20);
+  if (query.length < 2) return json({ profiles: [] });
+  const { data } = await admin.from("profiles").select("id,handle,avatar_url,level")
+    .ilike("handle", `%${query}%`).neq("id", t.pid).order("handle").limit(20);
+  return json({ profiles: (data || []).map((p: any) => ({ id: p.id, handle: p.handle, avatar: p.avatar_url || "", level: p.level })) });
+}
+
+async function friendshipRows(pid: string) {
+  const { data } = await admin.from("friendships").select("*").or(`requester_id.eq.${pid},addressee_id.eq.${pid}`).order("created_at", { ascending: false });
+  return data || [];
+}
+
+async function handleFriendsList(body: any) {
+  const t = await authed(body);
+  if (!t) return json({ error: "unauthorized" }, 401);
+  const rows = await friendshipRows(t.pid);
+  const ids = [...new Set(rows.flatMap((r: any) => [r.requester_id, r.addressee_id]).filter((id: string) => id !== t.pid))];
+  const { data: profiles } = ids.length
+    ? await admin.from("profiles").select("id,handle,avatar_url,level").in("id", ids)
+    : { data: [] as any[] };
+  const byId = new Map((profiles || []).map((p: any) => [p.id, p]));
+  const format = (r: any) => {
+    const otherId = r.requester_id === t.pid ? r.addressee_id : r.requester_id;
+    const p: any = byId.get(otherId) || {};
+    return { friendshipId: r.id, id: otherId, handle: p.handle || "Unknown Runner", avatar: p.avatar_url || "", level: p.level || 1 };
+  };
+  const { data: me } = await admin.from("profiles").select("discord_contacts").eq("id", t.pid).single();
+  const contacts = Array.isArray(me?.discord_contacts) ? me.discord_contacts : [];
+  const discordIds = contacts.map((contact: any) => String(contact.id));
+  const { data: linked } = discordIds.length
+    ? await admin.from("profiles").select("id,handle,avatar_url,discord_id,level").in("discord_id", discordIds)
+    : { data: [] as any[] };
+  const linkedByDiscord = new Map((linked || []).map((p: any) => [String(p.discord_id), p]));
+  return json({
+    friends: rows.filter((r: any) => r.status === "accepted").map(format),
+    incoming: rows.filter((r: any) => r.status === "pending" && r.addressee_id === t.pid).map(format),
+    outgoing: rows.filter((r: any) => r.status === "pending" && r.requester_id === t.pid).map(format),
+    discord: contacts.map((contact: any) => {
+      const p: any = linkedByDiscord.get(String(contact.id));
+      return { ...contact, profileId: p?.id || null, handle: p?.handle || null, level: p?.level || null };
+    }),
+  });
+}
+
+async function handleFriendRequest(body: any) {
+  const t = await authed(body);
+  if (!t) return json({ error: "unauthorized" }, 401);
+  const profileId = String(body.profileId || "");
+  if (!profileId || profileId === t.pid) return json({ error: "invalid runner" }, 400);
+  const existing = (await friendshipRows(t.pid)).find((r: any) =>
+    (r.requester_id === profileId && r.addressee_id === t.pid) ||
+    (r.requester_id === t.pid && r.addressee_id === profileId));
+  if (existing?.status === "accepted") return json({ ok: true, friendshipId: existing.id });
+  if (existing) return json({ ok: true, friendshipId: existing.id, pending: true });
+  const { data, error } = await admin.from("friendships").insert({ requester_id: t.pid, addressee_id: profileId }).select("id").single();
+  if (error) return json({ error: error.message }, 400);
+  return json({ ok: true, friendshipId: data.id, pending: true });
+}
+
+async function handleFriendRespond(body: any) {
+  const t = await authed(body);
+  if (!t) return json({ error: "unauthorized" }, 401);
+  const id = String(body.friendshipId || "");
+  if (body.accept) {
+    await admin.from("friendships").update({ status: "accepted", updated_at: new Date().toISOString() }).eq("id", id).eq("addressee_id", t.pid);
+  } else {
+    await admin.from("friendships").delete().eq("id", id).eq("addressee_id", t.pid);
+  }
+  return json({ ok: true });
+}
+
+async function handleFriendRemove(body: any) {
+  const t = await authed(body);
+  if (!t) return json({ error: "unauthorized" }, 401);
+  const id = String(body.friendshipId || "");
+  await admin.from("friendships").delete().eq("id", id).or(`requester_id.eq.${t.pid},addressee_id.eq.${t.pid}`);
+  return json({ ok: true });
+}
+
+async function handleDiscordFriendImport(body: any) {
+  const t = await authed(body);
+  if (!t) return json({ error: "unauthorized" }, 401);
+  const discordId = String(body.discordId || "");
+  const { data: me } = await admin.from("profiles").select("discord_contacts").eq("id", t.pid).single();
+  const allowed = (me?.discord_contacts || []).some((contact: any) => String(contact.id) === discordId);
+  if (!allowed) return json({ error: "Discord friend was not found" }, 403);
+  const { data: target } = await admin.from("profiles").select("id").eq("discord_id", discordId).maybeSingle();
+  if (!target) return json({ error: "This Discord friend has not created a Deadwire profile yet" }, 404);
+  return handleFriendRequest({ ...body, token: body.token, profileId: target.id });
 }
 async function handleSave(body: any) {
   const t = await verifyToken(String(body.token || ""));
@@ -187,6 +376,14 @@ Deno.serve(async (req) => {
     switch (body.action) {
       case "nonce": return await handleNonce(body);
       case "login": return await handleLogin(body);
+      case "discordLogin": return await handleDiscordLogin(body);
+      case "profileUpdate": return await handleProfileUpdate(body);
+      case "profilesSearch": return await handleProfilesSearch(body);
+      case "friendsList": return await handleFriendsList(body);
+      case "friendRequest": return await handleFriendRequest(body);
+      case "friendRespond": return await handleFriendRespond(body);
+      case "friendRemove": return await handleFriendRemove(body);
+      case "discordFriendImport": return await handleDiscordFriendImport(body);
       case "save": return await handleSave(body);
       case "applyRun": return await handleApplyRun(body);
       case "buyGold": return await handleBuyGold(body);

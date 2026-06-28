@@ -3,10 +3,12 @@
 import * as THREE from 'three';
 import { buildAsset } from '../assets.js';
 import { CONFIG } from '../data/config.js';
+import { getCoreTier } from '../data/economy.js';
 
 export class UnstableCore {
-  constructor(position) {
-    this.mesh = buildAsset('obj_unstable_core');
+  constructor(position, tierId = 'yellow') {
+    this.tier = getCoreTier(tierId);
+    this.mesh = buildAsset('obj_unstable_core', { tier: this.tier });
     this.mesh.position.copy(position);
     this.spawnPos = position.clone();
     this.carrier = null;        // Player or null
@@ -17,6 +19,20 @@ export class UnstableCore {
   }
 
   get position() { return this.mesh.position; }
+
+  setTier(tierId) {
+    const visible = this.mesh.visible;
+    const position = this.mesh.position.clone();
+    const spawned = this.spawned;
+    const carrier = this.carrier;
+    this.tier = getCoreTier(tierId);
+    this.mesh = buildAsset('obj_unstable_core', { tier: this.tier });
+    this.mesh.position.copy(position);
+    this.mesh.visible = visible;
+    this.spawned = spawned;
+    this.carrier = carrier;
+    this.interactRange = this.mesh.userData.interactRange || CONFIG.player.interactRange;
+  }
 
   spawn() { this.spawned = true; this.mesh.visible = true; }
 

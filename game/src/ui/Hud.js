@@ -1,6 +1,13 @@
 // Hud — DOM overlay: timer, health, weapon/ammo, objective, prompts, damage numbers.
 import * as THREE from 'three';
 
+const GOLD_TOKEN_IMAGE_URL = '/dead%20gold%20token.png';
+
+function lootLabel(item) {
+  if (item !== 'Gold') return item;
+  return `<span class="gold-token-label"><img src="${GOLD_TOKEN_IMAGE_URL}" alt="" />Gold</span>`;
+}
+
 export class Hud {
   constructor(root, camera) {
     this.camera = camera;
@@ -65,7 +72,7 @@ export class Hud {
   setLoot(items) {
     const entries = Object.entries(items);
     this.$('hudLoot').innerHTML = entries.length
-      ? entries.map(([k, v]) => `<span class="loot-chip">${k} <b>${v}</b></span>`).join('')
+      ? entries.map(([k, v]) => `<span class="loot-chip">${lootLabel(k)} <b>${v}</b></span>`).join('')
       : '<span class="loot-empty">No loot yet</span>';
   }
   setCore(state) {

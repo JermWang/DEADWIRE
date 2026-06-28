@@ -3,6 +3,7 @@ import { Game } from './core/Game.js';
 import { Lobby } from './ui/Lobby.js';
 import { MainMenu } from './ui/MainMenu.js';
 import { LoadingScreen } from './ui/LoadingScreen.js';
+import { Account } from './net/account.js';
 
 const canvas = document.getElementById('game');
 const uiRoot = document.getElementById('ui');
@@ -33,6 +34,7 @@ async function deployWithLoading(selectedLoadout, isOnline, playerName) {
     await new Promise((resolve) => requestAnimationFrame(resolve));
     game.start(selectedLoadout, isOnline, playerName);
     await loading.finish();
+    game.beginInsertionSequence();
   } catch (error) {
     loading.destroy();
     throw error;
@@ -40,4 +42,5 @@ async function deployWithLoading(selectedLoadout, isOnline, playerName) {
 }
 
 game.onExitToMenu = openMenu;   // results screen "Main Menu" button
+await Account.restore();
 openMenu();
