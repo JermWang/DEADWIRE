@@ -12,6 +12,11 @@ import { chooseCoreTier } from '../game/src/data/economy.js';
 const PORT = Number(process.env.PORT || process.env.MATCH_PORT || 5181);
 const HOST = process.env.HOST || '0.0.0.0';
 const MAX_LOBBY = 4;
+// Anti-cheat guardrails for client-reported PvP hits (client-authoritative for now).
+// Generous so no legitimate hit is ever rejected: max single-projectile damage is ~18,
+// max projectile travel is ~34 units. These only reject clearly-forged claims.
+const MAX_HIT_DMG = 100;
+const MAX_ENGAGE_DIST = 60;
 const clients = new Map(); // id -> Client
 const lobbies = new Map(); // partyCode -> Map<id, LobbyClient>
 let nextId = 1;
@@ -169,9 +174,18 @@ class Client {
       case 'fire':
         broadcast({ t: 'fire', id: this.id, ox: msg.ox, oz: msg.oz, dx: msg.dx, dz: msg.dz, weapon: msg.weapon }, this.id);
         break;
-      case 'hit': // client-authoritative PvP: I claim to have hit target for dmg
-        if (clients.has(msg.target)) clients.get(msg.target)._send({ t: 'hurt', by: this.id, dmg: msg.dmg });
+      case 'hit': { // client-authoritative PvP hit claim — validated + clamped server-side
+        const dmg = Math.max(0, Math.min(MAX_HIT_DMG, Number(msg.dmg) || 0));
+        const target = clients.get(msg.target);
+        const a = room.players.get(this.id), b = room.players.get(msg.target);
+        if (dmg > 0 && target && a && b && msg.target !== this.id) {
+          const dx = a.x - b.x, dz = a.z - b.z;
+          if (dx * dx + dz * dz <= MAX_ENGAGE_DIST * MAX_ENGAGE_DIST) {
+            target._send({ t: 'hurt', by: this.id, dmg });
+          }
+        }
         break;
+      }
       case 'crate_open':
         if (!room.cratesOpened.has(msg.index)) { room.cratesOpened.add(msg.index); broadcast({ t: 'crate_open', index: msg.index, by: this.id }, this.id); }
         break;

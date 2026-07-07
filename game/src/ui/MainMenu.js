@@ -433,7 +433,7 @@ export class MainMenu {
     removeEventListener('pointermove', this._onPointerMove);
     disposeObjectTree(this.scene);
     try { this.composer?.dispose?.(); } catch { /* noop */ }
-    try { this.renderer?.dispose(); } catch { /* noop */ }
+    try { this.renderer?.dispose(); this.renderer?.forceContextLoss?.(); } catch { /* noop */ }
     this.el.remove();
   }
 }

@@ -150,7 +150,7 @@ export class LoadingScreen {
     if (!this.el) return;
     this.running = false;
     disposeObjectTree(this.scene);
-    try { this.renderer?.dispose(); } catch { /* noop */ }
+    try { this.renderer?.dispose(); this.renderer?.forceContextLoss?.(); } catch { /* noop */ }
     this.el.remove();
     this.el = null;
   }

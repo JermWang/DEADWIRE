@@ -339,6 +339,16 @@ function deadToTreasury(tx: any, mint: string, treasury: string) {
   const after = Number(f(post)?.uiTokenAmount?.uiAmount || 0);
   return Math.max(0, after - before);
 }
+// How much $DEAD the given wallet's balance DROPPED in this tx (i.e. it was the sender).
+// Binds a settlement to the authenticated wallet so nobody can claim a stranger's transfer.
+function deadFromWallet(tx: any, mint: string, wallet: string) {
+  const pre = tx?.meta?.preTokenBalances || [];
+  const post = tx?.meta?.postTokenBalances || [];
+  const f = (arr: any[]) => arr.find((b: any) => b.mint === mint && b.owner === wallet);
+  const before = Number(f(pre)?.uiTokenAmount?.uiAmount || 0);
+  const after = Number(f(post)?.uiTokenAmount?.uiAmount || 0);
+  return Math.max(0, before - after);
+}
 async function handleBuyGold(body: any) {
   const t = await verifyToken(String(body.token || ""));
   if (!t) return json({ error: "unauthorized" }, 401);
@@ -349,17 +359,9 @@ async function handleBuyGold(body: any) {
   // idempotency: never credit the same on-chain tx twice
   const { data: dup } = await admin.from("settlements").select("id").eq("tx_sig", txSig).maybeSingle();
   if (dup) return json({ error: "already settled" }, 409);
-  const rpc = cfg.solana_rpc || "https://api.mainnet-beta.solana.com";
-  const r = await fetch(rpc, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getTransaction", params: [txSig, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0, commitment: "confirmed" }] }),
-  });
-  const j = await r.json().catch(() => ({}));
-  const tx = j?.result;
-  if (!tx || tx.meta?.err) return json({ error: "tx not found or failed" }, 400);
-  const dead = deadToTreasury(tx, cfg.dead_mint, cfg.treasury);
-  if (dead <= 0) return json({ error: "no $DEAD transfer to treasury in tx" }, 400);
+  const v = await verifyDeadDeposit(cfg, txSig, t.w);
+  if (v.error) return json({ error: v.error }, v.status || 400);
+  const dead = v.dead!;
   const gold = Math.floor(dead * Number(cfg.gold_per_dead || "0"));
   await admin.from("settlements").insert({ tx_sig: txSig, profile_id: t.pid, wallet: t.w, kind: "buy_gold", dead_amount: dead, gold_amount: gold });
   await bumpItem(t.pid, "Gold", gold);
@@ -371,7 +373,7 @@ async function handleBuyGold(body: any) {
 // Shared on-chain verifier for money-significant actions. Fetches the tx on the
 // configured Solana RPC, confirms it succeeded, and returns the $DEAD amount that
 // actually landed in the treasury. Returns { error, status } on any problem.
-async function verifyDeadDeposit(cfg: Record<string, string>, txSig: string) {
+async function verifyDeadDeposit(cfg: Record<string, string>, txSig: string, payer: string) {
   const rpc = cfg.solana_rpc || "https://api.mainnet-beta.solana.com";
   const r = await fetch(rpc, {
     method: "POST",
@@ -383,7 +385,11 @@ async function verifyDeadDeposit(cfg: Record<string, string>, txSig: string) {
   if (!tx || tx.meta?.err) return { error: "tx not found or failed", status: 400 };
   const dead = deadToTreasury(tx, cfg.dead_mint, cfg.treasury);
   if (dead <= 0) return { error: "no $DEAD transfer to treasury in tx", status: 400 };
-  return { dead };
+  // The authenticated wallet must be the SENDER, else anyone could claim a stranger's
+  // unsettled transfer. Credit the min of sent vs received to be safe.
+  const sent = deadFromWallet(tx, cfg.dead_mint, payer);
+  if (sent <= 0) return { error: "authenticated wallet did not send this $DEAD", status: 403 };
+  return { dead: Math.min(dead, sent) };
 }
 
 // deposit — player sent $DEAD to the treasury; record the on-chain deposit.
@@ -398,7 +404,7 @@ async function handleDeposit(body: any) {
   if (!cfg.dead_mint || !cfg.treasury) return json({ error: "store not configured" }, 503);
   const { data: dup } = await admin.from("settlements").select("id").eq("tx_sig", txSig).maybeSingle();
   if (dup) return json({ error: "already settled" }, 409);
-  const v = await verifyDeadDeposit(cfg, txSig);
+  const v = await verifyDeadDeposit(cfg, txSig, t.w);
   if (v.error) return json({ error: v.error }, v.status);
   const dead = v.dead!;
   await admin.from("settlements").insert({ tx_sig: txSig, profile_id: t.pid, wallet: t.w, kind: "deposit", dead_amount: dead });
@@ -445,7 +451,7 @@ async function handleTradeSale(body: any) {
   if (!listing) return json({ error: "listing not found" }, 404);
   if (listing.status !== "active") return json({ error: "listing not active" }, 409);
   if (listing.seller_id === t.pid) return json({ error: "cannot buy your own listing" }, 400);
-  const v = await verifyDeadDeposit(cfg, txSig);
+  const v = await verifyDeadDeposit(cfg, txSig, t.w);
   if (v.error) return json({ error: v.error }, v.status);
   const dead = v.dead!;
   if (dead + 1e-9 < Number(listing.price_dead)) return json({ error: "underpaid for listing" }, 400);

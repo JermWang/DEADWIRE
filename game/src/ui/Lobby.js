@@ -1594,7 +1594,7 @@ export class Lobby {
       window.removeEventListener('pointerup', h.up);
     }
     try { disposeObjectTree(this.locker.scene); } catch { /* noop */ }
-    try { this.locker.renderer.dispose(); } catch { /* noop */ }
+    try { this.locker.renderer.dispose(); this.locker.renderer.forceContextLoss?.(); } catch { /* noop */ }
     this.locker = null;
   }
 
@@ -1642,7 +1642,7 @@ export class Lobby {
     this.party?.disconnect();
     disposeObjectTree(this.scene);
     try { this.composer?.dispose?.(); } catch { /* noop */ }
-    try { this.renderer?.dispose(); } catch { /* noop */ }
+    try { this.renderer?.dispose(); this.renderer?.forceContextLoss?.(); } catch { /* noop */ }
     this.el.remove();
   }
 }
