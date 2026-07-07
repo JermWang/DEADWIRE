@@ -1098,7 +1098,7 @@ export class Lobby {
       ? Math.max(1, Math.min(MAX_PARTY, Number(size) || this._partySize()))
       : 1;
     this.destroy();
-    this.onDeploy(loadout, online, this.name, partySize);
+    this.onDeploy(loadout, online, this.name, partySize, this.partyCode);
   }
 
   _renderParty() {

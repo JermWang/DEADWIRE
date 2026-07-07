@@ -26,13 +26,13 @@ function openLobby(loadout, online, name) {
   });
 }
 
-async function deployWithLoading(selectedLoadout, isOnline, playerName, partySize = 1) {
+async function deployWithLoading(selectedLoadout, isOnline, playerName, partySize = 1, matchCode = '') {
   window.__deadwireReactorAudio?.stop?.();
   const loading = new LoadingScreen(uiRoot, { online: isOnline, name: playerName });
   try {
     await loading.intro();
     await new Promise((resolve) => requestAnimationFrame(resolve));
-    game.start(selectedLoadout, isOnline, playerName, partySize);
+    game.start(selectedLoadout, isOnline, playerName, partySize, matchCode);
     await loading.finish();
     game.beginInsertionSequence();
   } catch (error) {

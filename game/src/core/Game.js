@@ -226,7 +226,7 @@ export class Game {
     }));
   }
 
-  start(cosmetics = {}, online = false, name = 'Runner', partySize = 1) {
+  start(cosmetics = {}, online = false, name = 'Runner', partySize = 1, matchCode = '') {
     // Party size auto-selects the mode (1=SOLO..4=SQUAD). Solo (LocalNet) keeps
     // working exactly as before because mode[1] mirrors CONFIG.match defaults.
     this.partySize = Math.max(1, Math.min(4, Number(partySize) || 1));
@@ -242,7 +242,10 @@ export class Game {
     this.stashAtDeploy = Stash.load();
     this.runMods = runUpgradeModifiers(this.stashAtDeploy);
     this.coreTier = chooseCoreTier(Math.random, this.stashAtDeploy);
-    this.net = online ? new WebSocketNet(matchWsBase()) : new LocalNet();
+    // Online: pass our squad code + size so the server routes squadmates into the
+    // same shared PvPvE instance and tags our team (for no-friendly-fire).
+    const wsQuery = `?party=${encodeURIComponent(matchCode || '')}&size=${this.partySize || 1}`;
+    this.net = online ? new WebSocketNet(matchWsBase() + wsQuery) : new LocalNet();
 
     // world
     this.map = new BreakerYard();
@@ -372,7 +375,7 @@ export class Game {
     this.net.on('welcome', (m) => this._onWelcome(m));
     this.net.on('join', (m) => this._addRemote(m.player));
     this.net.on('leave', (m) => this._removeRemote(m.id));
-    this.net.on('state', (m) => { const r = this.remotes.get(m.id); if (r) { if (m.name) r.name = m.name; r.setState(m); } else this._addRemote(m); });
+    this.net.on('state', (m) => { const r = this.remotes.get(m.id); if (r) { if (m.name) r.name = m.name; if (m.team) r.team = m.team; r.setState(m); } else this._addRemote(m); });
     this.net.on('fire', (m) => this._remoteTracer(m));
     this.net.on('hurt', (m) => this._hurtPlayer(m.dmg));
     this.net.on('crate_open', (m) => this._reflectCrateOpen(m.index));
@@ -383,6 +386,7 @@ export class Game {
 
   _onWelcome(m) {
     this.localId = m.id;
+    this.myTeam = m.team || this.myTeam || null;
     if (m.match) {
       // Server is authoritative on party size → adopt its mode for HUD/timing.
       if (m.match.size) {
@@ -414,6 +418,7 @@ export class Game {
   _addRemote(p) {
     if (!p || p.id === this.localId || this.remotes.has(p.id)) return;
     const r = new RemotePlayer(p.id, p.name || 'Runner');
+    r.team = p.team || null;
     r.target.set(p.x || 0, 0, p.z || 0); r.mesh.position.copy(r.target);
     if (p.hp != null) r.hp = p.hp; if (p.carrying != null) r.carrying = p.carrying;
     this.remotes.set(p.id, r); this.scene.add(r.mesh);
@@ -880,6 +885,7 @@ export class Game {
         // PvP: hit a remote runner -> report to server (authoritative target applies)
         if (!hit && this.online) {
           for (const r of this.remotes.values()) {
+            if (r.team && this.myTeam && r.team === this.myTeam) continue; // no friendly fire
             const dx = p.mesh.position.x - r.position.x, dz = p.mesh.position.z - r.position.z;
             const hitR = r.radius + p.radius;
             if (dx * dx + dz * dz < hitR * hitR) {
