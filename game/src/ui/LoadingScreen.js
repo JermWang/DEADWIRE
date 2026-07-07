@@ -7,6 +7,17 @@ import { disposeObjectTree } from '../render/dispose.js';
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
 
+// Short game tips rotated in the loading-screen corner (concise for a quick read).
+const LOADING_TIPS = [
+  'Extract to bank your loot — die before you extract and you drop everything you carried.',
+  'WASD to move, mouse to aim, click to fire. Q rolls to dodge; 1–3 swap weapons.',
+  'Crack crates for loot, then reach a glowing extraction zone to secure it.',
+  'The reactor core pays the rarest loot — but carrying it makes you the target.',
+  'Gold buys gear in the marketplace. $DEAD is the on-chain hard currency in your wallet.',
+  'Rare gold tokens drop from HOT ZONE showdowns and hold real value — extract to keep them.',
+  'Party up to split the risk and lock down the core in a hot zone.',
+];
+
 export class LoadingScreen {
   constructor(root, { online = false, name = 'Runner' } = {}) {
     this.root = root;
@@ -34,7 +45,39 @@ export class LoadingScreen {
         <div class="loading-bar"><span id="loadingFill"></span></div>
       </div>`;
     this.root.appendChild(this.el);
+    this._initTip();
     this._initScene();
+  }
+
+  _initTip() {
+    const tip = document.createElement('div');
+    tip.className = 'loading-tip';
+    tip.style.cssText = 'position:absolute;left:24px;bottom:22px;max-width:min(380px,72vw);display:flex;gap:11px;'
+      + 'align-items:flex-start;padding:12px 15px 13px;border-radius:11px;z-index:6;'
+      + 'background:linear-gradient(160deg,rgba(13,20,23,.9),rgba(9,14,16,.9));'
+      + 'border:1px solid rgba(99,210,255,.22);box-shadow:0 16px 42px -20px rgba(0,0,0,.85);'
+      + 'transition:opacity .35s ease;';
+    tip.innerHTML = '<span style="flex:none;font-size:10px;font-weight:700;letter-spacing:.18em;color:#f2a93b;padding-top:2px;">TIP</span>'
+      + '<span id="loadingTipText" style="font-size:12.5px;line-height:1.45;color:#b6c1c7;"></span>';
+    this.el.appendChild(tip);
+    this._tipEl = tip;
+    this._tipText = tip.querySelector('#loadingTipText');
+    this._tipOrder = LOADING_TIPS.map((_, i) => i).sort(() => Math.random() - 0.5);
+    this._tipText.textContent = LOADING_TIPS[this._tipOrder[0]];
+    this._tipAt = 1;
+    this._tipTimer = setInterval(() => this._rotateTip(), 2600);
+  }
+
+  _rotateTip() {
+    if (!this._tipText) return;
+    const idx = this._tipOrder[this._tipAt % this._tipOrder.length];
+    this._tipAt += 1;
+    this._tipEl.style.opacity = '0';
+    setTimeout(() => {
+      if (!this._tipText) return;
+      this._tipText.textContent = LOADING_TIPS[idx];
+      this._tipEl.style.opacity = '1';
+    }, 170);
   }
 
   _esc(value) {
@@ -149,6 +192,7 @@ export class LoadingScreen {
   destroy() {
     if (!this.el) return;
     this.running = false;
+    clearInterval(this._tipTimer);
     disposeObjectTree(this.scene);
     try { this.renderer?.dispose(); this.renderer?.forceContextLoss?.(); } catch { /* noop */ }
     this.el.remove();

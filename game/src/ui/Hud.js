@@ -1,6 +1,5 @@
 // Hud — DOM overlay: timer, health, weapon/ammo, objective, prompts, damage numbers.
 import * as THREE from 'three';
-import { Hints } from './Hints.js';
 
 const GOLD_TOKEN_IMAGE_URL = '/dead%20gold%20token.png';
 
@@ -36,7 +35,6 @@ export class Hud {
       <div class="siren" id="hudSiren"></div>
       <div class="lowhp" id="hudLowHp"></div>
       <div class="reticle-aim" id="hudReticle"></div>
-      <div class="aim-hint" id="hudAimHint">CLICK TO AIM</div>
       <div class="fx-layer" id="hudFx"></div>`;
     root.appendChild(this.el);
     this.$ = (id) => this.el.querySelector('#' + id);
@@ -44,25 +42,7 @@ export class Hud {
     this._dmg = [];
     this._markers = new Map();
     this._mini = this.$('hudMinimap').getContext('2d');
-    // First-time deploy: controls + extraction-loop coachmarks, then a short
-    // economy explainer once those close. No-op for veterans (Hints checks
-    // Stash.onboarded read-only) and once dismissed/muted.
-    this._hintTimer = setTimeout(() => this.showFirstRunHints(), 1600);
-  }
-
-  // Plays the in-run tutorial: HUD/controls sequence, then the economy primer.
-  // Chained so the two non-blocking popups never overlap.
-  showFirstRunHints() {
-    const root = this._hintRoot;
-    if (!root || !this.el.isConnected) return; // HUD already torn down
-    const hudRun = Hints.show('hud', root);
-    if (hudRun) {
-      const wasOnClose = hudRun.onClose;
-      hudRun.onClose = () => { wasOnClose?.(); setTimeout(() => Hints.show('economy', root), 600); };
-    } else {
-      // HUD tips already seen/muted — still offer the economy primer if pending.
-      Hints.show('economy', root);
-    }
+    // Tutorial tips now live in the loading screen (neat corner), not over the match.
   }
 
   setTimer(sec) {
@@ -205,10 +185,7 @@ export class Hud {
     const r = this.$('hudReticle');
     r.style.transform = `translate(${screenX}px, ${screenY}px)`;
   }
-  setAimHint(show) {
-    const h = this.$('hudAimHint');
-    if (h) h.style.opacity = show ? '1' : '0';
-  }
+  setAimHint() { /* removed: players don't need a "click to aim" prompt */ }
   setAmmo(n) {
     const el = this.$('hudAmmo');
     if (!el) return;
