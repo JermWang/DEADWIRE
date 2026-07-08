@@ -1,12 +1,22 @@
 // Minimal dependency-free WebSocket server (RFC 6455, text frames).
 // Keeps the project zero-install like the rest of the tooling. Handles the
-// handshake, masked client frames, fragmentation across TCP chunks, and close.
+// handshake, masked client frames, fragmentation across TCP chunks, close,
+// and a server-side ping/pong heartbeat that reaps dead peers.
 // Good enough for small JSON match messages; not a hardened production server.
 import crypto from 'node:crypto';
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
+// Heartbeat: hosting proxies (Render/Cloudflare) can keep the upstream socket
+// open after a client vanishes, so the server never sees a close and "ghost"
+// players linger in instances forever. Ping every peer on an interval; any
+// data (browsers auto-pong pings at the protocol level) refreshes lastSeen,
+// and a silent peer is terminated so normal 'close' cleanup runs.
+const HEARTBEAT_INTERVAL_MS = 10 * 1000;
+const HEARTBEAT_TIMEOUT_MS = 30 * 1000;
+
 export function attachWS(server, onConnection) {
+  const conns = new Set();
   server.on('upgrade', (req, socket) => {
     const key = req.headers['sec-websocket-key'];
     if (!key) { socket.destroy(); return; }
@@ -18,8 +28,21 @@ export function attachWS(server, onConnection) {
       `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
     );
     socket.setNoDelay(true);
-    onConnection(new Conn(socket), req);
+    const conn = new Conn(socket);
+    conns.add(conn);
+    conn.on('close', () => conns.delete(conn));
+    onConnection(conn, req);
   });
+  const sweep = setInterval(() => {
+    const cutoff = Date.now() - HEARTBEAT_TIMEOUT_MS;
+    for (const conn of conns) {
+      if (conn.closed) { conns.delete(conn); continue; }
+      if (conn.lastSeen < cutoff) conn.terminate();
+      else conn.ping();
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+  sweep.unref(); // never keep the process alive just for the sweeper
+  server.on('close', () => clearInterval(sweep));
 }
 
 class Conn {
@@ -28,6 +51,7 @@ class Conn {
     this.handlers = {};
     this.buf = Buffer.alloc(0);
     this.closed = false;
+    this.lastSeen = Date.now();
     socket.on('data', (d) => this._onData(d));
     socket.on('close', () => this._emitClose());
     socket.on('error', () => this._emitClose());
@@ -38,6 +62,7 @@ class Conn {
   _emitClose() { if (this.closed) return; this.closed = true; this._emit('close'); }
 
   _onData(chunk) {
+    this.lastSeen = Date.now(); // any traffic (state, pong, close) proves the peer is alive
     this.buf = Buffer.concat([this.buf, chunk]);
     let frame;
     while ((frame = this._readFrame())) {
@@ -83,6 +108,11 @@ class Conn {
   }
 
   _pong(payload) { try { this.socket.write(this._frame(0xA, payload)); } catch { /* noop */ } }
+
+  ping() { if (!this.closed) { try { this.socket.write(this._frame(0x9, Buffer.alloc(0))); } catch { this._emitClose(); } } }
+
+  // Hard-drop a dead peer (no close handshake — it isn't listening).
+  terminate() { try { this.socket.destroy(); } catch { /* noop */ } this._emitClose(); }
 
   send(str) {
     if (this.closed) return;
