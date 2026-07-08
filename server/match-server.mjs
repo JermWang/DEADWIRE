@@ -15,10 +15,15 @@ const HOST = process.env.HOST || '0.0.0.0';
 const MAX_LOBBY = 4;               // max squad size
 const INSTANCE_CAP = 12;           // players per shared match instance
 const JOIN_WINDOW_MS = 120 * 1000; // an instance stops taking new squads after this
-// Anti-cheat guardrails for client-reported PvP hits (client-authoritative for now).
-// Generous so no legit hit is rejected: max single-projectile dmg ~18, max travel ~34u.
-const MAX_HIT_DMG = 100;
-const MAX_ENGAGE_DIST = 60;
+// Server-authoritative PvP: the server sets hit damage from CONFIG and gates each hit
+// on a recent shot + the firing weapon's range, so a modified client can't forge damage,
+// pick arbitrary targets, or land impossible cross-map hits.
+const MAX_HIT_DMG = 100;          // hard cap, belt-and-suspenders
+const FIRE_WINDOW_MS = 1500;      // a hit must follow a real shot from that runner within this
+const WEAPONS = (CONFIG.loadout || []).map((id) => {
+  const w = (CONFIG.weapons && CONFIG.weapons[id]) || {};
+  return { dmg: Number(w.damage) || 12, range: (Number(w.projectileSpeed) || 22) * (Number(w.projectileLife) || 1) };
+});
 
 const lobbies = new Map();       // partyCode -> Map<id, LobbyClient>
 const instances = new Map();     // instanceId -> instance
@@ -198,18 +203,22 @@ class Client {
         broadcast(inst, { t: 'state', id: this.id, team: p.team, x: p.x, z: p.z, facing: p.facing, hp: p.hp, weapon: p.weapon, carrying: p.carrying, name: p.name }, this.id);
         break;
       case 'fire':
+        // Remember the shot so a following hit claim can be validated server-side.
+        this._lastFire = { at: now(), weapon: Math.max(0, Math.min(WEAPONS.length - 1, Number(msg.weapon) || 0)) };
         broadcast(inst, { t: 'fire', id: this.id, ox: msg.ox, oz: msg.oz, dx: msg.dx, dz: msg.dz, weapon: msg.weapon }, this.id);
         break;
-      case 'hit': { // client-authoritative hit claim — clamped, range-checked, no friendly fire
-        const dmg = Math.max(0, Math.min(MAX_HIT_DMG, Number(msg.dmg) || 0));
+      case 'hit': { // server-authoritative: damage from CONFIG, gated by a recent shot + range + team
         const target = inst.clients.get(msg.target);
         const a = inst.players.get(this.id), b = inst.players.get(msg.target);
-        if (dmg > 0 && target && a && b && msg.target !== this.id && a.team !== b.team) {
-          const dx = a.x - b.x, dz = a.z - b.z;
-          if (dx * dx + dz * dz <= MAX_ENGAGE_DIST * MAX_ENGAGE_DIST) {
-            target._send({ t: 'hurt', by: this.id, dmg });
-          }
-        }
+        const lf = this._lastFire;
+        if (!target || !a || !b || msg.target === this.id || a.team === b.team) break;
+        if (!lf || now() - lf.at > FIRE_WINDOW_MS) break;          // must follow a real shot
+        const w = WEAPONS[lf.weapon] || WEAPONS[0] || { dmg: 18, range: 30 };
+        const dx = a.x - b.x, dz = a.z - b.z;
+        const reach = w.range + 8;                                 // margin for projectile travel + latency
+        if (dx * dx + dz * dz > reach * reach) break;              // out of the weapon's plausible range
+        const dmg = Math.min(MAX_HIT_DMG, Math.max(1, w.dmg));     // server sets the damage, not the client
+        target._send({ t: 'hurt', by: this.id, dmg });
         break;
       }
       case 'crate_open':

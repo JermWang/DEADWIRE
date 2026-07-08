@@ -75,6 +75,12 @@ function assetThumbnail(id, options, accent = '#5ee8ff') {
   return dataUrl;
 }
 
+// Returns a cached thumbnail if one exists, else null (no render). Lets the market
+// paint placeholders instantly and fill procedural thumbnails off the critical path.
+function cachedThumbnail(id, options) {
+  return _thumbCache.get(`${id}::${JSON.stringify(options || {})}`) || null;
+}
+
 function makePartyCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let value = 'DW-';
@@ -1024,10 +1030,13 @@ export class Lobby {
     if (listing.image) {
       return `<i class="market-thumb"><img src="${this._esc(listing.image)}" alt="" loading="lazy" /></i>`;
     }
-    // Procedural cores/weapons/cosmetics render a live Three.js thumbnail.
+    // Procedural cores/weapons/cosmetics: use the cached thumbnail if ready, else
+    // defer the WebGL render (see _fillThumbs) so opening the market never hitches.
     if (listing.assetId) {
-      const url = assetThumbnail(listing.assetId, listing.assetOptions, listing.color);
-      if (url) return `<i class="market-thumb"><img src="${url}" alt="" /></i>`;
+      const cached = cachedThumbnail(listing.assetId, listing.assetOptions);
+      if (cached) return `<i class="market-thumb"><img src="${cached}" alt="" /></i>`;
+      (this._deferredThumbs ||= []).push({ id: listing.id, assetId: listing.assetId, options: listing.assetOptions, color: listing.color });
+      return `<i class="market-thumb" data-thumb="${this._esc(String(listing.id))}"></i>`;
     }
     return '<i></i>';
   }
@@ -1035,6 +1044,7 @@ export class Lobby {
   _renderMarket() {
     const grid = this.el.querySelector('#marketGrid');
     if (!grid) return;
+    this._deferredThumbs = [];
     const min = Number(String(this.market.min).replace(/[^\d]/g, '') || 0);
     const max = Number(String(this.market.max).replace(/[^\d]/g, '') || Infinity);
     let rows = this._marketListings().filter((listing) => {
@@ -1073,6 +1083,28 @@ export class Lobby {
           <button data-market-watch="${listing.id}">${watched ? 'WATCHING' : listing.owned ? 'LIST FROM VAULT' : 'WATCH'}</button>
         </article>`;
     }).join('') || '<div class="market-empty">No listings match those filters.</div>';
+    this._fillThumbs();
+  }
+
+  // Fill deferred procedural thumbnails one per animation frame, so opening the market
+  // never fires a burst of synchronous WebGL renders + toDataURL readbacks in one frame.
+  _fillThumbs() {
+    cancelAnimationFrame(this._thumbRaf);
+    const grid = this.el?.querySelector('#marketGrid');
+    const queue = (this._deferredThumbs || []).slice();
+    if (!grid || !queue.length) return;
+    const step = () => {
+      if (!grid.isConnected) return;
+      const item = queue.shift();
+      if (!item) return;
+      const slot = grid.querySelector(`[data-thumb="${CSS.escape(String(item.id))}"]`);
+      if (slot && !slot.firstChild) {
+        const url = assetThumbnail(item.assetId, item.options, item.color);
+        if (url) slot.innerHTML = `<img src="${url}" alt="" />`;
+      }
+      this._thumbRaf = requestAnimationFrame(step);
+    };
+    this._thumbRaf = requestAnimationFrame(step);
   }
 
   _ready() {
@@ -1638,6 +1670,7 @@ export class Lobby {
 
   destroy() {
     this.running = false;
+    cancelAnimationFrame(this._thumbRaf);
     this._destroyLocker();
     this.party?.disconnect();
     disposeObjectTree(this.scene);

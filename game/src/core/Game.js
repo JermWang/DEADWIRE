@@ -429,7 +429,8 @@ export class Game {
 
   _addRemote(p) {
     if (!p || p.id === this.localId || this.remotes.has(p.id)) return;
-    const r = new RemotePlayer(p.id, p.name || 'Runner');
+    const friendly = !!(p.team && this.myTeam && p.team === this.myTeam);
+    const r = new RemotePlayer(p.id, p.name || 'Runner', friendly);
     r.team = p.team || null;
     r.target.set(p.x || 0, 0, p.z || 0); r.mesh.position.copy(r.target);
     if (p.hp != null) r.hp = p.hp; if (p.carrying != null) r.carrying = p.carrying;

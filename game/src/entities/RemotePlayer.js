@@ -6,27 +6,29 @@ import { buildAsset, mountWeaponToSocket } from '../assets.js';
 import { PlayerAnimator } from './PlayerAnimator.js';
 import { disposeObjectTree } from '../render/dispose.js';
 
-function nameplate(text) {
+function nameplate(text, friendly = false) {
   const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64;
   const ctx = cv.getContext('2d');
   ctx.font = 'bold 30px sans-serif'; ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, 256, 64);
-  ctx.fillStyle = '#f4f7ef'; ctx.fillText(text, 128, 42);
+  ctx.fillStyle = friendly ? '#63d2ff' : '#ff7a5a'; ctx.fillText(text, 128, 42);
   const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthTest: false }));
   spr.scale.set(1.6, 0.4, 1); spr.position.y = 2.5;
   return spr;
 }
 
 export class RemotePlayer {
-  constructor(id, name = 'Runner') {
+  constructor(id, name = 'Runner', friendly = false) {
     this.id = id;
     this.name = name;
-    this.mesh = buildAsset('char_runner', { pose: 'aim', colors: { jacket: '#5a3b4a' } }); // tinted to read as "other"
+    this.friendly = friendly;
+    // Squadmates read cyan/blue; enemy runners read hostile red.
+    this.mesh = buildAsset('char_runner', { pose: 'aim', colors: { jacket: friendly ? '#2f6f8a' : '#7a3230' } });
     const grip = this.mesh.getObjectByName(this.mesh.userData.weaponSocketName || 'hand_r') || this.mesh;
     this.grip = grip;
     this.weapon = buildAsset('weapon_scrap_pistol');
     mountWeaponToSocket(this.weapon, grip);
-    this.mesh.add(nameplate(name));
+    this.mesh.add(nameplate(name, friendly));
 
     this.carryOrb = buildAsset('obj_unstable_core', { variant: 'carry' });
     this.carryOrb.scale.setScalar(0.46);
