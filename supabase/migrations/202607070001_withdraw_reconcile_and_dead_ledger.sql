@@ -43,3 +43,7 @@ drop trigger if exists trg_reconcile_rejected_withdrawal on public.withdrawals;
 create trigger trg_reconcile_rejected_withdrawal
   after update of status on public.withdrawals
   for each row execute function public.reconcile_rejected_withdrawal();
+
+-- This is a trigger-only SECURITY DEFINER function; it must never be callable
+-- directly via the PostgREST RPC endpoint. Revoke EXECUTE from the API roles.
+revoke all on function public.reconcile_rejected_withdrawal() from anon, authenticated, public;
