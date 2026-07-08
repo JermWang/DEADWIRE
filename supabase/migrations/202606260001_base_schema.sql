@@ -138,7 +138,7 @@ grant select on public.profiles, public.sectors, public.leaderboard to anon, aut
 
 -- Seed config (treasury empty => money rails stay 503 until launch; no secrets here).
 insert into public.app_config(key, value) values
-  ('dead_mint', 'nVE4EY5Q5ByPjsNAFuCr2iMC7Gpu2pgrTStx4MNpump'),
+  ('dead_mint', '7gDPdQG2G3tS8LCmRMH79tdScx65HAz6rbwwEfjNpump'),
   ('treasury', ''),
   ('gold_per_dead', '1000')
 on conflict (key) do nothing;

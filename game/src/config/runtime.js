@@ -21,7 +21,7 @@ export const RUNTIME = {
   // of launch; the buy/deposit/trade rails stay DISABLED until `treasury` is set
   // (Pay.configured() needs both; the server stays 503 while app_config.treasury is
   // empty). Flip on at launch by setting treasury here + in Supabase app_config.
-  deadMint: 'nVE4EY5Q5ByPjsNAFuCr2iMC7Gpu2pgrTStx4MNpump', // $DEAD mint (pump.fun, pre-launch)
+  deadMint: '7gDPdQG2G3tS8LCmRMH79tdScx65HAz6rbwwEfjNpump', // $DEAD mint (pump.fun, pre-launch)
   treasury: '',        // treasury wallet pubkey — set at launch to enable purchases
   goldPerDead: 1000,   // in-game Gold credited per 1 $DEAD
 
