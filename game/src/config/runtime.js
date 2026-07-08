@@ -4,8 +4,8 @@
 // stays inside the Supabase edge function). Safe to commit.
 export const RUNTIME = {
   // Supabase project (Deadwire).
-  supabaseUrl: 'https://dfwzakgibutalkqyuwbj.supabase.co',
-  supabaseAnonKey: 'sb_publishable_FY_NH0_PVDrplkNzMj_7ZA_oxoSRzhw',
+  supabaseUrl: 'https://xpusyclepmkvsvkvnsef.supabase.co',
+  supabaseAnonKey: 'sb_publishable_ReS8GX794oIEREL4SVVcig_m1iwtPav',
 
   // Deployed match server (Railway). Empty => derive ws://<host>:5181 for local dev.
   // matchWsBase() converts https:// -> wss:// automatically.
