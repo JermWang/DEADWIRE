@@ -1,0 +1,17 @@
+# Free-host blueprint for the Deadwire match server (alternative to Railway).
+# Render free web services support WebSockets and require no card. They spin down
+# after ~15 min idle (cold start on the next connect) — fine for dev/pre-launch.
+# The server is zero-install (no deps), so there's no build step; it reads $PORT.
+services:
+  - type: web
+    name: deadwire-match
+    runtime: node
+    plan: free
+    region: ohio
+    buildCommand: ""
+    startCommand: node server/match-server.mjs
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
