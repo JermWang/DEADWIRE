@@ -136,12 +136,38 @@ export class Hud {
       ctx.fillStyle = c.opened ? 'rgba(99,210,255,0.25)' : '#63d2ff';
       ctx.fillRect(tx(c.x) - 1.5, tz(c.z) - 1.5, 3, 3);
     }
-    // enemies
+    // AI enemies (orange — red is reserved for human hostiles)
     for (const e of state.enemies) {
       if (!e.alive) continue;
-      ctx.fillStyle = '#ff5436';
+      ctx.fillStyle = '#d98139';
       const r = e.kind === 'tank' ? 3.5 : 2.2;
       ctx.beginPath(); ctx.arc(tx(e.x), tz(e.z), r, 0, Math.PI * 2); ctx.fill();
+    }
+    // other RUNNERS — squadmates solid cyan; hostiles red (bright right after a
+    // gunfire ping, fading as it ages); the core carrier gets a pulsing halo.
+    for (const r of state.runners || []) {
+      const x = tx(r.x), y = tz(r.z);
+      if (r.carrying) {
+        ctx.strokeStyle = '#9c76ff'; ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.arc(x, y, 5.5 + state.pulse * 2.5, 0, Math.PI * 2); ctx.stroke();
+      }
+      if (r.friendly) {
+        ctx.fillStyle = '#63d2ff';
+        ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.stroke();
+      } else {
+        const recent = r.firedAgo < 4;
+        const alpha = r.carrying ? 1 : recent ? Math.max(0.45, 1 - r.firedAgo / 4) : 0.85;
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = '#ff3428';
+        ctx.beginPath(); ctx.arc(x, y, 3.2, 0, Math.PI * 2); ctx.fill();
+        if (recent) { // fresh shot: expanding ring so the ping reads at a glance
+          ctx.strokeStyle = '#ff3428'; ctx.lineWidth = 1.2;
+          ctx.beginPath(); ctx.arc(x, y, 3.2 + r.firedAgo * 3, 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
     }
     // core
     if (state.core && state.core.spawned && !state.core.carried) {

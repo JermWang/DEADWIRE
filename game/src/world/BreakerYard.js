@@ -11,10 +11,11 @@ import { DistantBackdrop } from './DistantBackdrop.js';
 import { VegetationField } from './VegetationField.js';
 import { disposeObjectTree } from '../render/dispose.js';
 
-// Linear spacing multiplier applied between POIs. Raised from sqrt(5) so the
-// expanded POI roster spreads across a roughly 2x-larger playable footprint
-// while each POI keeps its authored internal dimensions.
-const MAP_LINEAR_SCALE = Math.sqrt(7);
+// Linear spacing multiplier applied between POIs (each POI keeps its authored
+// internal dimensions). Tuned back down from sqrt(7): the wider footprint read
+// as empty and starved extraction PvP of encounters — at sqrt(5) the same 15-POI
+// roster packs ~28% less ground area, so rotations cross other squads' paths.
+const MAP_LINEAR_SCALE = Math.sqrt(5);
 
 export class BreakerYard {
   constructor() {

@@ -104,6 +104,13 @@ export class Game {
     for (const [podIndex, spawnIndex] of spawnIndices.entries()) {
       const sp = this.map.def.spawnPoints[spawnIndex] || this.map.def.spawnPoints[0];
       const position = new THREE.Vector3(sp[0], 0, sp[1]);
+      // Pods sharing one arc (online squads) fan out so the stick doesn't stack;
+      // pod 0 stays exactly on the spawn point — the local runner rides it.
+      if (podIndex > 0 && spawnIndices[0] === spawnIndex) {
+        const fan = podIndex * 2.2;
+        position.x += Math.cos(fan) * 3.4;
+        position.z += Math.sin(fan) * 3.4;
+      }
       // pod index 0 is always the local runner's occupied drop pod
       const occupied = podIndex === 0;
       const pod = new InsertionPod(position, { index: podIndex, occupied });
@@ -200,10 +207,30 @@ export class Game {
   _coreSpawnSec() { return this.mode?.coreSpawnSec ?? CONFIG.match.coreSpawnSec; }
   _modeLabel() { return this.mode?.label || 'SOLO'; }
   _podSpawns() {
-    // One pod per runner in the party; solo falls back to the full ambient ring.
+    // Online: the whole squad drops as one stick of pods at the party's rim arc
+    // (pods fan out around the point in _beginInsertionSequence). Offline solo
+    // keeps the authored ambient pod ring.
+    if (this.online) {
+      const count = (this.mode?.pods && this.mode.pods.length) || 1;
+      return new Array(count).fill(this._spawnIndex ?? 5);
+    }
     return (this.mode?.pods && this.mode.pods.length)
       ? this.mode.pods
       : (CONFIG.match.insertionPodSpawns || [5]);
+  }
+
+  // Deterministic rim spawn per squad: hashing the party code sends different
+  // crews to different arcs (squadmates share the code -> same arc). Online
+  // solos randomize; offline solo keeps the tuned south-road start (index 5).
+  _chooseSpawnIndex() {
+    const points = this.map?.def?.spawnPoints?.length || 1;
+    if (!this.online) return Math.min(5, points - 1);
+    if (this.matchCode) {
+      let h = 5381;
+      for (let i = 0; i < this.matchCode.length; i++) h = ((h << 5) + h + this.matchCode.charCodeAt(i)) | 0;
+      return Math.abs(h) % points;
+    }
+    return Math.floor(Math.random() * points);
   }
 
   _ammoMax() {
@@ -236,7 +263,11 @@ export class Game {
     this.cosmetics = cosmetics;
     this.online = online;
     this.playerName = name;
+    this.matchCode = String(matchCode || '');
     this.remotes = new Map();
+    this._firePings = new Map();    // remote id -> last time they fired (minimap pings)
+    this.remoteCarrierId = null;    // who holds the core when it isn't us
+    this.coreGone = false;          // core extracted (by anyone) -> endgame loot-extract phase
     this.stateTimer = 0;
     this.corePickupSent = false;
     this.stashAtDeploy = Stash.load();
@@ -263,9 +294,12 @@ export class Game {
       };
     });
 
-    // player
+    // player — online squads spread across the rim by party code so rival crews
+    // insert at different arcs instead of stacking on one spawn (solo offline
+    // keeps the tuned south-road start)
     this.player = new Player(cosmetics);
-    const sp = this.map.def.spawnPoints[5]; // south road start
+    this._spawnIndex = this._chooseSpawnIndex();
+    const sp = this.map.def.spawnPoints[this._spawnIndex] || this.map.def.spawnPoints[0];
     this.player.mesh.position.set(sp[0], 0, sp[1]);
     this.scene.add(this.player.mesh);
     this._applyProgressionToPlayer();
@@ -388,7 +422,7 @@ export class Game {
     this.net.on('join', (m) => this._addRemote(m.player));
     this.net.on('leave', (m) => this._removeRemote(m.id));
     this.net.on('state', (m) => { const r = this.remotes.get(m.id); if (r) { if (m.name) r.name = m.name; if (m.team) r.team = m.team; r.setState(m); } else this._addRemote(m); });
-    this.net.on('fire', (m) => this._remoteTracer(m));
+    this.net.on('fire', (m) => { this._firePings.set(m.id, this.t); this._remoteTracer(m); });
     this.net.on('hurt', (m) => this._hurtPlayer(m.dmg));
     this.net.on('crate_open', (m) => this._reflectCrateOpen(m.index));
     this.net.on('core_spawn', (m) => { if (m?.tier) this._setCoreTier(m.tier); if (!this.coreSpawned) this._spawnCore(); });
@@ -486,21 +520,24 @@ export class Game {
     // authoritative core ownership from the server
     if (m.carrierId === this.localId) {
       // granted to me
+      this.remoteCarrierId = null;
       this.core.pickUp(this.player); this.carryOrb.visible = true;
       this.hud.setCore('carrying'); this.hud.banner(`${this.core.tier.label.toUpperCase()} SECURED — extract it`, 2400);
       this.hud.setObjective(`Extract the ${this.core.tier.label} (south road)`);
     } else if (m.carrierId) {
       // a remote holds it
+      this.remoteCarrierId = m.carrierId;
       if (this.player.carryingCore) { this.player.carryingCore = false; this.carryOrb.visible = false; this.hud.setCore(''); }
       this.core.carrier = { remote: true }; this.core.mesh.visible = false;
       const r = this.remotes.get(m.carrierId); if (r) r.carrying = true;
     } else {
       // dropped / extracted / carrier left
+      this.remoteCarrierId = null;
       if (this.player.carryingCore) { this.player.carryingCore = false; this.carryOrb.visible = false; this.hud.setCore('dropped'); }
       for (const r of this.remotes.values()) r.carrying = false;
       this.core.carrier = null;
       if (!m.extractedBy) { this.core.mesh.position.set(m.x ?? this.core.spawnPos.x, 0, m.z ?? this.core.spawnPos.z); this.core.mesh.visible = true; }
-      else { this.core.mesh.visible = false; }
+      else { this.core.mesh.visible = false; this.coreGone = true; }
     }
   }
 
@@ -758,13 +795,25 @@ export class Game {
     if (this.player.alive) { const r = this.renderer.domElement.getBoundingClientRect(); this.hud.setReticle(r.width / 2, r.height / 2); }
     else this.hud.setReticle(-100, -100);
 
-    // minimap
+    // minimap — includes other RUNNERS: squadmates always (cyan); hostiles only
+    // when they give themselves away (recent gunfire ping, close proximity, or
+    // carrying the core), so hunting stays a read, not a wallhack.
+    const FIRE_PING_SEC = 4, PROXIMITY_R = 22;
+    const runners = [];
+    for (const r of this.remotes.values()) {
+      if (r.hp <= 0) continue;
+      const firedAgo = this.t - (this._firePings.get(r.id) ?? -Infinity);
+      const near = r.position.distanceToSquared(this.player.position) < PROXIMITY_R * PROXIMITY_R;
+      if (!r.friendly && !(firedAgo < FIRE_PING_SEC) && !near && !r.carrying) continue;
+      runners.push({ x: r.position.x, z: r.position.z, friendly: r.friendly, carrying: r.carrying, firedAgo });
+    }
     const [minX, minZ] = this.map.def.bounds.min, [maxX, maxZ] = this.map.def.bounds.max;
     this.hud.drawMinimap({
       bounds: [minX, minZ, maxX, maxZ],
       zones: this._miniZones,
       player: { x: this.player.position.x, z: this.player.position.z, facing: this.player.facing },
       enemies: this.enemies.map((e) => ({ x: e.position.x, z: e.position.z, alive: e.alive, kind: e.kind })),
+      runners,
       crates: this.crates.map((c) => ({ x: c.position.x, z: c.position.z, opened: c.opened })),
       extracts: this.extracts.map((e) => ({ x: e.position.x, z: e.position.z, r: e.radius })),
       core: { x: this.core.position.x, z: this.core.position.z, spawned: this.core.spawned, carried: !!this.core.carrier },
@@ -772,16 +821,60 @@ export class Game {
       carrying: this.player.carryingCore,
     });
 
-    // off-screen objective markers
+    // off-screen objective markers — always give the player a "go here" vector
     const markers = [];
-    if (this.player.carryingCore) {
+    const nearestExtract = () => {
       let best = null, bd = Infinity;
       for (const e of this.extracts) { const d = this.player.position.distanceTo(e.position); if (d < bd) { bd = d; best = e; } }
+      return best;
+    };
+    const carrier = this.remoteCarrierId ? this.remotes.get(this.remoteCarrierId) : null;
+    if (this.player.carryingCore) {
+      const best = nearestExtract();
       if (best) markers.push({ key: 'extract', pos: new THREE.Vector3(best.position.x, 1, best.position.z), label: 'EXTRACT', color: '#9bff5a', edgeOnly: true });
-    } else if (this.core.spawned && !this.core.carrier) {
+    } else if (carrier && !carrier.friendly) {
+      // hunt vector: the enemy carrier is the objective now
+      markers.push({ key: 'carrier', pos: new THREE.Vector3(carrier.position.x, 1.6, carrier.position.z), label: 'CORE CARRIER', color: '#ff5436', edgeOnly: true });
+    } else if (carrier && carrier.friendly) {
+      const best = nearestExtract();
+      if (best) markers.push({ key: 'extract', pos: new THREE.Vector3(best.position.x, 1, best.position.z), label: 'COVER EVAC', color: '#9bff5a', edgeOnly: true });
+    } else if (this.core.spawned && !this.core.carrier && !this.coreGone) {
       markers.push({ key: 'core', pos: new THREE.Vector3(this.core.position.x, 1.2, this.core.position.z), label: 'REACTOR CORE', color: '#9c76ff', edgeOnly: true });
+    } else if (!this.coreSpawned && !this.coreGone) {
+      // pre-spawn drift vector: everyone converges on the reactor site
+      markers.push({ key: 'coresite', pos: new THREE.Vector3(this.core.position.x, 1.2, this.core.position.z), label: 'REACTOR SITE', color: '#9c76ff', edgeOnly: true });
+    }
+    if (this.coreGone || (this.timeLeft ?? Infinity) < 90) {
+      const best = nearestExtract();
+      if (best) markers.push({ key: 'extract', pos: new THREE.Vector3(best.position.x, 1, best.position.z), label: 'EXTRACT', color: '#9bff5a', edgeOnly: true });
+    }
+    // squadmates: always know where your crew is
+    for (const r of this.remotes.values()) {
+      if (r.friendly && r.hp > 0) markers.push({ key: `mate:${r.id}`, pos: new THREE.Vector3(r.position.x, 1.8, r.position.z), label: (r.name || 'SQUAD').toUpperCase(), color: '#63d2ff', edgeOnly: true });
     }
     this.hud.setMarkers(markers, this.renderer);
+    this._updateObjectivePhase();
+  }
+
+  // Phase-driven objective line: always tells the player the ONE thing to do now
+  // (with live countdowns) instead of a static hint.
+  _updateObjectivePhase() {
+    if (this.insertion || this.insertionPending || !this.player?.alive) return;
+    const mmss = (s) => { s = Math.max(0, Math.floor(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+    const label = (this.core?.tier?.label || 'reactor core').toUpperCase();
+    const carrier = this.remoteCarrierId ? this.remotes.get(this.remoteCarrierId) : null;
+    let text;
+    if (this.player.carryingCore) text = `EXTRACT THE ${label} — reach an evac zone`;
+    else if (carrier && carrier.friendly) text = 'YOUR SQUAD HAS THE CORE — cover the evac run';
+    else if (carrier) text = 'ENEMY HAS THE CORE — hunt the carrier';
+    else if (this.coreGone) text = 'CORE GONE — extract with your loot';
+    else if (this.coreSpawned) text = `${label} ONLINE — secure it`;
+    else {
+      const untilCore = this._coreSpawnSec() - (this._matchDurationSec() - (this.timeLeft ?? this._matchDurationSec()));
+      text = `LOOT UP — core online in ${mmss(untilCore)}`;
+    }
+    if ((this.timeLeft ?? Infinity) < 90 && !this.player.carryingCore) text = `ZONE COLLAPSE ${mmss(this.timeLeft)} — EXTRACT NOW`;
+    if (text !== this._lastObjectiveText) { this._lastObjectiveText = text; this.hud.setObjective(text); }
   }
 
   _spawnDebris(pos, color, count = 8) {
