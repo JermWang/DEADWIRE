@@ -143,6 +143,36 @@ export class BreakerYard {
         });
       }
     }
+
+    // Lightweight object collision: register substantial ground-level structures/props
+    // (walls, containers, towers, generators, racks…) as AABB blockers, reusing the
+    // existing collide() — no physics engine. Footprints are derived once at load from
+    // world bounding boxes; flat decals, tiny decor, elevated pieces, and large open
+    // floors are skipped so buildings stay enterable. Cost: a few hundred tiny records
+    // + the same O(n) distance scan collide() already runs.
+    const box = new THREE.Box3();
+    this.semanticRoot.updateWorldMatrix(true, true);
+    let added = 0;
+    this.semanticRoot.traverse((obj) => {
+      if (obj.userData?.semanticMapAsset !== true) return;
+      box.setFromObject(obj);
+      if (box.isEmpty() || box.min.y > 1.6) return;            // elevated (upper floors/roof)
+      const sx = box.max.x - box.min.x;
+      const sz = box.max.z - box.min.z;
+      const height = box.max.y - box.min.y;
+      const maxDim = Math.max(sx, sz);
+      const minDim = Math.min(sx, sz);
+      if (height < 0.9 || maxDim < 0.8) return;                // flat decals / tiny decor
+      if (minDim > 12) return;                                 // large open floors/plazas stay walkable
+      this.blockers.push({
+        x: (box.min.x + box.max.x) / 2,
+        z: (box.min.z + box.max.z) / 2,
+        hx: Math.max(0.2, sx / 2 - 0.15),                      // slight inset so edges feel light
+        hz: Math.max(0.2, sz / 2 - 0.15),
+      });
+      added += 1;
+    });
+    this._structureBlockerCount = added;
   }
 
   _perimeter(minX, minZ, maxX, maxZ) {
