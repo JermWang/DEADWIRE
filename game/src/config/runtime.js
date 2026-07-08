@@ -3,9 +3,9 @@
 // no private keys ever live client-side (wallet is non-custodial; service role
 // stays inside the Supabase edge function). Safe to commit.
 export const RUNTIME = {
-  // Supabase project (Deadwire).
-  supabaseUrl: 'https://xpusyclepmkvsvkvnsef.supabase.co',
-  supabaseAnonKey: 'sb_publishable_ReS8GX794oIEREL4SVVcig_m1iwtPav',
+  // Supabase project (DEADWIRE, fresh org — egress-unrestricted).
+  supabaseUrl: 'https://gdclhpuakkcatzmzxysd.supabase.co',
+  supabaseAnonKey: 'sb_publishable_hPJm0A8XO7CoDe8XrbLFzA_Ug0jjYS9',
 
   // Deployed match server (Railway). Empty => derive ws://<host>:5181 for local dev.
   // matchWsBase() converts https:// -> wss:// automatically.

@@ -1,6 +1,8 @@
 # Deadwire — Supabase backend
 
-Project ref: `dfwzakgibutalkqyuwbj` · URL: https://dfwzakgibutalkqyuwbj.supabase.co
+Project ref: `gdclhpuakkcatzmzxysd` · URL: https://gdclhpuakkcatzmzxysd.supabase.co
+(fresh egress-unrestricted org `ddyfuxeyoyrmsefcqigi`; supersedes the paused
+`dfwzakgibutalkqyuwbj` and egress-restricted `xpusyclepmkvsvkvnsef`)
 
 ## Schema
 Unified Discord/Solana accounts, social graph, and economy. Applied via migrations:
@@ -36,7 +38,9 @@ lobby Friends page.
 5. Request/approve `relationships.read` for Discord-friend import. Login and
    in-game username search still work when Discord does not grant that scope.
 
-Apply `migrations/202606270001_social_profiles.sql` before deploying this function.
+Apply migrations in order (`202606260001_base_schema` → `202606270001_social_profiles`
+→ `202606280001_money_rails` → `202607070001_withdraw_reconcile_and_dead_ledger`)
+before deploying this function.
 
 The HMAC session token is signed with the service-role key (already a secret env var
 inside the function). We never hold a wallet private key; players sign in their own
@@ -44,5 +48,5 @@ wallet. Deployed with `verify_jwt = false` because it does its own auth.
 
 Redeploy (MCP or CLI):
 ```
-supabase functions deploy account --project-ref dfwzakgibutalkqyuwbj --no-verify-jwt
+supabase functions deploy account --project-ref gdclhpuakkcatzmzxysd --no-verify-jwt
 ```
