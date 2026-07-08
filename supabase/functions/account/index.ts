@@ -374,7 +374,9 @@ async function handleBuyGold(body: any) {
 // configured Solana RPC, confirms it succeeded, and returns the $DEAD amount that
 // actually landed in the treasury. Returns { error, status } on any problem.
 async function verifyDeadDeposit(cfg: Record<string, string>, txSig: string, payer: string) {
-  const rpc = cfg.solana_rpc || "https://api.mainnet-beta.solana.com";
+  // RPC precedence: edge-function secret (SOLANA_RPC_URL, e.g. a Helius URL — kept
+  // OUT of the DB) > app_config.solana_rpc > public mainnet fallback.
+  const rpc = Deno.env.get("SOLANA_RPC_URL") || cfg.solana_rpc || "https://api.mainnet-beta.solana.com";
   const r = await fetch(rpc, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
