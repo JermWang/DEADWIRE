@@ -250,6 +250,18 @@ export class Game {
     // world
     this.map = new BreakerYard();
     this.scene.add(this.map.root);
+    // Precompute minimap zone tints (choropleth by danger/loot tier) once per run so
+    // players can read where they stand: hot center vs safe perimeter.
+    this._miniZones = (this.map.mapDefinition?.pois || []).map((poi) => {
+      const s = poi.size || {};
+      const foot = Math.max(Number(s.x) || 0, Number(s.z) || 0, 8);
+      return {
+        x: poi.position.x, z: poi.position.z,
+        r: Math.max(18, foot * (this.map.layoutScale || 1) * 0.85),
+        tier: poi.dangerTier || poi.lootTier || 'safe',
+        combat: !!poi.combat,
+      };
+    });
 
     // player
     this.player = new Player(cosmetics);
@@ -749,6 +761,7 @@ export class Game {
     const [minX, minZ] = this.map.def.bounds.min, [maxX, maxZ] = this.map.def.bounds.max;
     this.hud.drawMinimap({
       bounds: [minX, minZ, maxX, maxZ],
+      zones: this._miniZones,
       player: { x: this.player.position.x, z: this.player.position.z, facing: this.player.facing },
       enemies: this.enemies.map((e) => ({ x: e.position.x, z: e.position.z, alive: e.alive, kind: e.kind })),
       crates: this.crates.map((c) => ({ x: c.position.x, z: c.position.z, opened: c.opened })),

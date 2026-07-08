@@ -109,6 +109,22 @@ export class Hud {
     const tx = (x) => (x - minX) * sc, tz = (z) => (z - minZ) * sc;
     ctx.clearRect(0, 0, S, S);
     ctx.fillStyle = 'rgba(10,14,16,0.82)'; ctx.fillRect(0, 0, S, S);
+    // zone risk coloring — choropleth ground tint so you can read where you stand
+    // (hot red center → safe green perimeter). Soft radial blobs blend into a heatmap.
+    if (state.zones && state.zones.length) {
+      const TIER = { apex: '#ff3428', hot: '#ff6a2c', warm: '#f2a93b', safe: '#3bd6a0', high: '#ff6a2c', mid: '#f2a93b', low: '#3bd6a0' };
+      const aHex = (a) => Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, '0');
+      for (const z of state.zones) {
+        const col = TIER[z.tier] || '#3bd6a0';
+        const cx = tx(z.x), cy = tz(z.z), rr = Math.max(6, z.r * sc);
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rr);
+        g.addColorStop(0, col + aHex(z.combat ? 0.5 : 0.34));
+        g.addColorStop(0.7, col + aHex(z.combat ? 0.2 : 0.13));
+        g.addColorStop(1, col + '00');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.fill();
+      }
+    }
     // extraction zones
     for (const e of state.extracts) {
       ctx.beginPath(); ctx.arc(tx(e.x), tz(e.z), e.r * sc, 0, Math.PI * 2);
