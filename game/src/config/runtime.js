@@ -7,9 +7,10 @@ export const RUNTIME = {
   supabaseUrl: 'https://gdclhpuakkcatzmzxysd.supabase.co',
   supabaseAnonKey: 'sb_publishable_hPJm0A8XO7CoDe8XrbLFzA_Ug0jjYS9',
 
-  // Deployed match server (Railway). Empty => derive ws://<host>:5181 for local dev.
-  // matchWsBase() converts https:// -> wss:// automatically.
-  matchServerUrl: 'https://deadwire-match-production.up.railway.app',
+  // Deployed match server (Render free web service). Empty => derive ws://<host>:5181
+  // for local dev. matchWsBase() converts https:// -> wss:// automatically.
+  // NOTE: Render free spins down after ~15min idle; first connect cold-starts (~50s).
+  matchServerUrl: 'https://deadwire-match.onrender.com',
 
   // Solana — MAINNET. Non-custodial: players sign with their own wallet.
   solanaCluster: 'mainnet-beta',
