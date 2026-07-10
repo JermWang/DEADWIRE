@@ -422,6 +422,11 @@ html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb {
 .social-row button { padding: 7px; font-size: 7px; }
 .social-row em { color: var(--amber); font-size: 7px; font-style: normal; font-weight: 950; }
 .social-empty { padding: 16px; color: #74868e; border: 1px dashed rgba(117,155,169,.22); font-size: 10px; line-height: 1.5; }
+/* Guided "no friends yet" onboarding inside the friends column */
+.crew-onboard { display: flex; flex-direction: column; gap: 7px; }
+.crew-onboard b { color: #cfe3ea; font-size: 10px; letter-spacing: .1em; }
+.crew-onboard .handle-edit { margin-top: 4px; }
+.crew-onboard .quiet-note { color: #5d6f77; font-size: 9px; }
 .search-results { margin-top: 14px; }
 .loadout-page-grid { margin-top: 18px; display: grid; grid-template-columns: .9fr 1.1fr; gap: 22px; }
 .weapon-grid { margin-bottom: 22px; display: grid; gap: 7px; }

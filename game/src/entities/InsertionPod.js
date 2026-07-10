@@ -17,7 +17,10 @@ export class InsertionPod {
     this.root = new THREE.Group();
     this.root.name = `insertion_pod_${index}`;
     this.root.position.set(position.x, 18, position.z);
-    this.root.lookAt(0, 0.8, 0);
+    // Yaw-only facing toward the reactor center: a full lookAt from drop
+    // altitude pitches the capsule toward the ground, so pods descend (and
+    // land) visibly tilted. Keep the hull upright and rotate around Y only.
+    this.root.rotation.y = Math.atan2(-position.x, -position.z);
 
     const hull = mat('#27323a', { metal: 0.62, rough: 0.46 });
     const hullDark = mat('#11171b', { metal: 0.7, rough: 0.42 });

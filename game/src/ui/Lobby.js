@@ -408,6 +408,19 @@ export class Lobby {
       this.el.querySelector('#partyStatus').textContent = ok ? 'INVITE LINK COPIED' : `INVITE: ${this._inviteLink()}`;
       return;
     }
+    if (action === 'inviteSlot') {
+      // Empty crew slot -> open the friends module to pick someone. The render
+      // shows a guided "how to add friends" state when the list is empty.
+      this._inviteIntent = true;
+      this._showPage('friends');
+      return;
+    }
+    if (action === 'focusSearch') {
+      const input = this.el.querySelector('#friendSearch');
+      input?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      input?.focus();
+      return;
+    }
     if (action === 'join') {
       const input = this.el.querySelector('#joinCode');
       // Accept a raw code or a pasted ?party=CODE invite link.
@@ -662,6 +675,10 @@ export class Lobby {
       this.el.querySelector('#requestsList').innerHTML = '<div class="social-empty">No request inbox while offline.</div>';
       this.el.querySelector('#discordList').innerHTML = '<div class="social-empty">Discord friends appear after login and permission.</div>';
       this._renderFriendResults();
+      if (this._inviteIntent) {
+        this._inviteIntent = false;
+        this._setSocialMessage('CONNECT A PROFILE ABOVE TO INVITE FRIENDS TO YOUR PARTY');
+      }
       return;
     }
     const profile = Account.profile || {};
@@ -684,10 +701,33 @@ export class Lobby {
       }
     }
     const friends = this.el.querySelector('#friendsList');
+    // Guided empty state: show HOW to add friends instead of a bare placeholder.
+    // Discord-friend import only works for Discord logins (accounts aren't
+    // linked), so wallet users are pointed at username search + the party link.
+    const viaDiscord = Account.provider() === 'discord';
+    const noFriendsOnboard = `
+      <div class="social-empty crew-onboard">
+        <b>NO CREW YET — two ways to find runners:</b>
+        <span>1 · Search a friend's in-game username and send a request.</span>
+        <span>2 · ${viaDiscord
+          ? 'Your Discord friends who play Deadwire appear in the DISCORD column — hit ADD.'
+          : 'Log in with Discord instead to auto-import your Discord friends who play.'}</span>
+        <div class="handle-edit">
+          <button data-act="focusSearch">SEARCH USERNAME</button>
+          <button class="quiet" data-act="copy">COPY PARTY LINK</button>
+        </div>
+        <span class="quiet-note">The party link works on anyone — send it to a friend and they drop straight into your squad.</span>
+      </div>`;
     friends.innerHTML = this.social.friends.map((person) => this._socialRow(person,
       `<button data-act="friendInvite" data-handle="${this._esc(person.handle)}">INVITE</button>
        <button class="quiet" data-act="friendRemove" data-friendship-id="${person.friendshipId}">REMOVE</button>`)).join('')
-      || '<div class="social-empty">Search for a runner or import a Discord friend.</div>';
+      || noFriendsOnboard;
+    if (this._inviteIntent) {
+      this._inviteIntent = false;
+      this._setSocialMessage(this.social.friends.length
+        ? 'PICK A RUNNER AND HIT INVITE — it copies your party link to send them'
+        : 'ADD A FRIEND BELOW, OR COPY YOUR PARTY LINK AND SEND IT TO ANYONE');
+    }
     const requests = [
       ...this.social.incoming.map((person) => this._socialRow(person,
         `<button data-act="friendAccept" data-friendship-id="${person.friendshipId}">ACCEPT</button>
@@ -1156,7 +1196,7 @@ export class Lobby {
       const member = this.members[index];
       return member
         ? `<div data-slot="${index}" class="slot-label occupied ${member.ready ? 'ready' : ''}"><b>${this._esc(member.name)}</b><span>${member.ready ? 'READY' : member.leader ? 'LEADER' : 'NOT READY'}</span></div>`
-        : `<div data-slot="${index}" class="slot-label empty"><button data-act="copy" title="Copy party invite"><i>+</i><span>INVITE</span></button></div>`;
+        : `<div data-slot="${index}" class="slot-label empty"><button data-act="inviteSlot" title="Invite a friend to your party"><i>+</i><span>INVITE</span></button></div>`;
     }).join('');
 
     this._renderModeLabel();
